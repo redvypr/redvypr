@@ -257,3 +257,65 @@ def test_adc_tab_without_redvypr(widget):
     adc_answer(dlg, PROFILE, cals={})
     assert dlg.adc_items_state.text() == ""
     dlg.close()
+
+
+# --- setup profiles as items (step 5 of design_items.rst) ---------------------------------------
+
+def test_profile_item_roundtrip_and_override():
+    builtin = adc_setups.get("hf_ntc_v01")
+    item = adc_setups.to_item(builtin)
+    assert item.ref == "setup/hf_ntc_v01" and item.sensor == "adc_brd" and "setup=" not in item.sequence
+    assert item.channels["ntc0"] == {"cal": "ntc", "unit": "degC", "scale": 10000.0, "scale_ref": ["board", "R1"],
+                                     "slot": "J2.3-4", "hint": builtin.channels["ntc0"].hint}
+    back = adc_setups.from_item(item)
+    assert back.text == builtin.text and back.channels == builtin.channels and not back.builtin
+    try:
+        # an item of the same name wins over the built-in profile; invalid items are skipped
+        changed = item.model_copy(update={"sequence": builtin.text.replace("sps=5", "sps=10")})
+        bad = item.model_copy(update={"id": "bad", "sequence": "nonsense;;"})
+        assert adc_setups.update_from_items([changed, bad]) == ["hf_ntc_v01"]
+        assert adc_setups.get("hf_ntc_v01").sequence().sps == "10"
+        assert [s.name for s in adc_setups.for_sensor("adc_brd")] == ["hf_ntc_v01"]
+    finally:
+        adc_setups.update_from_items([])
+    assert adc_setups.get("hf_ntc_v01").sequence().sps == "5"
+
+
+def test_adc_tab_save_profile_as_item(widget):
+    import redvypr
+    rv = redvypr.Redvypr(hostname='adcprofile')
+    w = widget
+    w.device.redvypr = rv
+    try:
+        show_device(w)
+        w.open_settings("GW")
+        dlg = w.settings_dialogs["GW"]
+        adc_answer(dlg, PROFILE, cals={})
+        assert dlg.adc_save_setup_btn.isEnabled()
+        assert dlg.adc_save_profile("bad-name") is None and "not saved" in dlg.adc_status.text()
+        # one step more than hf_ntc_v01: the profile keeps the channels of hf_ntc_v01
+        dlg.adc_add_step()
+        assert dlg.adc_save_profile("hf_ntc_lab", "Lab setup") == "hf_ntc_lab"
+        item = rv.get_item("setup/hf_ntc_lab")
+        assert item.sensor == "adc_brd" and item.title == "Lab setup" and item.board_type == "breakout_v01"
+        assert item.channels["ntc0"]["slot"] == "J2.3-4" and item.channels["ntc0"]["scale_ref"] == ["board", "R1"]
+        assert dlg.adc_setup.currentData() == "hf_ntc_lab" and "setup=hf_ntc_lab" in dlg.adc_text.text()
+        assert "item setup/hf_ntc_lab" in dlg.adc_setup.itemData(dlg.adc_setup.currentIndex(),
+                                                                  ng.QtCore.Qt.ItemDataRole.ToolTipRole)
+        assert adc_setups.get("hf_ntc_lab").title == "Lab setup"
+        dlg.close()
+    finally:
+        w.device.redvypr = None
+        adc_setups.update_from_items([])
+
+
+def test_device_metadata_names_setup():
+    import queue
+    q = queue.Queue()
+    gw = ng._Gateway({"device": None, "thread_uuid": "t"}, None, q, queue.Queue())
+    gw.publish_info({"key": "AA", "info": {"hwid": "AA", "board": "v02", "setup": {"adc_brd": "hf_ntc_v01"}}})
+    data = q.get_nowait()
+    entries = data["_metadata"]["@di:'AA'"] if "@di:'AA'" in data["_metadata"] else \
+        next(v for k, v in data["_metadata"].items() if "AA" in k)
+    setup = [e["value"] for e in entries if e["key"] == "setup"]
+    assert setup == [{"adc_brd": "hf_ntc_v01"}]

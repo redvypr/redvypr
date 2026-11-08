@@ -343,7 +343,15 @@ Steps
    the board; the calibration dialog takes R_ref from the board (new
    calibration) or offers it with a button. Calibrations applied in redvypr
    (sensor manager) use ``resolve_param()`` the same way (with step 6).
-5. Setup profiles as ``setup`` items, translation of terminal slots.
+5. **Done** (``redvypr.items.SetupItem``, ``setup_of()``; norlog:
+   ``adc_setups.to_item()``/``from_item()``/``update_from_items()``, button
+   "Save as profile ..." in the ADC tab; the gateway sends the profiles of a
+   norlog as device metadata ``setup`` = {sensor: name} at ``@di:<hwid>``):
+   setup profiles as ``setup`` items, translation of terminal slots. The
+   built-in profiles stay in the code as fallback; an item of the same name
+   wins. The profile item carries ``channels`` (with ``slot``, ``cal``,
+   ``unit``, ``scale``, ``scale_ref``, ``hint``) and the norlog fields
+   ``sensor`` and ``sequence`` as additional fields.
 6. Migration of ``BaseSensor``.
 
 

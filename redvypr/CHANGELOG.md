@@ -31,6 +31,12 @@ redvypr changelog
   every channel from the items and warns if the R_ref of an NTC calibration on the device differs
   from R1 of the board; the calibration dialog takes R_ref from the board. Setup profile channels
   name the parameter (`ChannelCal.scale_ref`). `redvypr.items.resolve_param()`.
+- Setup profiles as items (step 5): item type `setup` (`redvypr.items.SetupItem`) with the
+  channels of a profile and the slot of their item (e.g. a terminal `J2.3-4`); `get_items()`
+  translates such slots with the profile the device names (metadata `setup`). norlog: the gateway
+  sends the profiles of a norlog as device metadata, profiles from `setup` items win over the
+  built-in ones, ADC tab "Save as profile ..." stores the table as `setup` item. The built-in
+  profile `hf_ntc_v01` names the terminals of its channels.
 - norlog gateway: setup profiles of the ADC sequence (firmware >= 0.4.51, design note
   doc/design_aufbau_profile.md of the firmware). New module `adc_setups` with the profiles as
   templates (sequence and kind of calibration per channel), first `hf_ntc_v01` for the breakout v01

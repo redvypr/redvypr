@@ -183,3 +183,34 @@ def test_resolve_param():
     assert items.resolve_param(storage, "ntc0 @ i:'adc_brd' and di:'0xA1B2'", 'board', 'mpn')[0] is None
     assert items.resolve_param(storage, "ntc0 @ di:'0xFFFF'", 'board', 'R1') == (None, None)
     assert items.param_value({'value': 3, 'unit': 'Ohm'}) == 3.0 and items.param_value(True) is None
+
+
+def test_setup_profile_translates_terminals():
+    storage = {}
+    tree(storage)
+    # the NTC names the terminal of the breakout instead of the channel
+    ntc = items.get_item(storage, 'ntc_sensor/0042')
+    items.add_item(storage, ntc.model_copy(update={'slot': 'J2.3-4'}), valid_from=T0)
+    items.add_item(storage, items.SetupItem(id='hf_ntc_v01', board_type='breakout_test',
+                                            channels={'ntc0': {'slot': 'J2.3-4', 'cal': 'ntc'}}), valid_from=T0)
+    addr = "ntc0 @ i:'adc_brd' and di:'0xA1B2'"
+    found = items.get_items(storage, addr)
+    assert 'sensor' not in found and 'setup' not in found        # the device names no profile yet
+    # the device reports its profile (metadata of the gateway, address with the UUID of the host)
+    from redvypr import metadata as md
+    md.add_metadata_to_entries(md.create_metadata_dict("@di:'0xA1B2' and u:'host-uuid'",
+                                                       {'setup': {'adc_brd': 'hf_ntc_v01'}}, valid_from=T1), storage)
+    found = items.get_items(storage, "ntc0 @ i:'adc_brd' and di:'0xA1B2' and u:'host-uuid'", at_time=T2)
+    assert found['sensor'].ref == 'ntc_sensor/0042' and found['setup'].ref == 'setup/hf_ntc_v01'
+    assert found['board'].ref == 'breakout_test/BO-003'
+    # a query without the UUID (e.g. built by a device widget) finds it too
+    assert items.get_items(storage, addr, at_time=T2)['sensor'].ref == 'ntc_sensor/0042'
+    # before the device named the profile: no translation
+    assert 'sensor' not in items.get_items(storage, "ntc0 @ i:'adc_brd' and di:'0xA1B2' and u:'host-uuid'",
+                                           at_time='2026-11-05T00:00:00Z')
+    # a profile of another sensor (packetid) does not apply
+    assert 'sensor' not in items.get_items(storage, "ntc0 @ i:'adc_hfm' and di:'0xA1B2' and u:'host-uuid'",
+                                           at_time=T2)
+    setup = items.get_item(storage, 'setup/hf_ntc_v01')
+    assert setup.channel_of_slot('J2.3-4') == 'ntc0' and setup.slot_of_channel('ntc1') is None
+    assert items.setup_name({'setup': 'x'}) == 'x' and items.setup_name({'setup': {'a': 'y'}}, 'a') == 'y'

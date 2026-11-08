@@ -123,6 +123,35 @@ def register_item_type(cls: typing.Type[Item]) -> typing.Type[Item]:
 register_item_type(Item)
 
 
+@register_item_type
+class SetupItem(Item):
+    """
+    A setup profile: a template (id = its name, no physical thing) describing a
+    measurement setup, e.g. a breakout board with sensors at the ADC of a logger.
+    'channels' maps the channel names (datakeys) to their properties; 'slot' is
+    the slot of the item measured by the channel (e.g. a terminal 'J2.3-4'), so
+    items may name terminals instead of channel names. The device names its
+    profile with the metadata key 'setup' (a name, or {packetid: name}).
+    Device specific fields (norlog: 'sensor', 'sequence') are additional fields.
+    """
+    ITEMTYPE: typing.ClassVar[str] = 'setup'
+    REVISION: typing.ClassVar[int] = 1
+    title: typing.Optional[str] = pydantic.Field(default=None, description='Short title of the profile')
+    board_type: typing.Optional[str] = pydantic.Field(default=None, description='Item type of the board')
+    channels: typing.Optional[dict] = pydantic.Field(
+        default=None, description='channel -> {slot, cal, unit, scale, scale_ref, hint, ...}')
+
+    def channel_of_slot(self, slot: str) -> typing.Optional[str]:
+        for ch, props in (self.channels or {}).items():
+            if isinstance(props, dict) and props.get('slot') == slot:
+                return ch
+        return None
+
+    def slot_of_channel(self, channel: str) -> typing.Optional[str]:
+        props = (self.channels or {}).get(channel)
+        return props.get('slot') if isinstance(props, dict) else None
+
+
 def get_item_type(itemtype: str) -> typing.Type[Item]:
     """The model of an item type; the generic Item for unknown types."""
     return ITEM_TYPES.get(itemtype, Item)
@@ -352,7 +381,10 @@ def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
        'device'; in its tree (children by 'parent', valid at the time) the
        item whose 'slot' equals the datakey (or the datakey without a
        '_suffix', 'ntc0_raw' -> 'ntc0') is the 'sensor', its parent the
-       'board' (if it is not the device itself).
+       'board' (if it is not the device itself). If no item has that slot and
+       the device names a setup profile (metadata 'setup'), the slot the
+       profile gives the channel is used (e.g. a terminal 'J2.3-4'); the
+       profile is returned as 'setup'.
     Returns {} if nothing is found.
     """
     raddr = address if isinstance(address, RedvyprAddress) else RedvyprAddress(address)
@@ -404,11 +436,23 @@ def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
             break
         level = nxt
 
+    # 3. slots: the datakey itself, 4. else the slot the setup profile gives the channel
+    setup = setup_of(storage, raddr, at_time=at_time, metadata=md)
+    if setup is not None:
+        result['setup'] = setup
+    slots = []
     for cand in _datakey_candidates(str(datakey)):
-        matches = [it for it in descendants if it.slot == cand]
+        slots.append(cand)
+    if setup is not None:
+        for cand in _datakey_candidates(str(datakey)):
+            slot = setup.slot_of_channel(cand)
+            if slot and slot not in slots:
+                slots.append(slot)
+    for slot in slots:
+        matches = [it for it in descendants if it.slot == slot]
         if matches:
             if len(matches) > 1:
-                logger.warning(f'several items in slot {cand!r} of {device.ref}: {[m.ref for m in matches]}')
+                logger.warning(f'several items in slot {slot!r} of {device.ref}: {[m.ref for m in matches]}')
             sensor = matches[0]
             result['sensor'] = sensor
             if sensor.parent and sensor.parent != device.ref:
@@ -417,6 +461,28 @@ def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
                     result['board'] = board
             break
     return result
+
+
+def setup_name(metadata: dict, packetid=None) -> typing.Optional[str]:
+    """Name of the setup profile in the metadata of a data address: key 'setup', a name or {packetid: name}."""
+    value = (metadata or {}).get('setup')
+    if isinstance(value, dict):
+        value = value.get(packetid) if packetid is not None else None
+    return value if isinstance(value, str) and value else None
+
+
+def setup_of(storage: dict, address, at_time=None, metadata=None) -> typing.Optional[SetupItem]:
+    """The setup profile item a datastream names at a time (metadata 'setup' of its device), or None."""
+    raddr = address if isinstance(address, RedvyprAddress) else RedvyprAddress(address)
+    md = _query(storage, raddr, at_time) if metadata is None else metadata
+    name = setup_name(md, raddr.packetid)
+    if not name:
+        return None
+    try:
+        item = get_item(storage, SetupItem.ITEMTYPE, name, at_time=at_time)
+    except ItemError:
+        return None
+    return item if isinstance(item, SetupItem) else None
 
 
 # --- parameters of items (e.g. a calibration taking R_ref from the board) ------------------

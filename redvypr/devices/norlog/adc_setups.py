@@ -6,11 +6,18 @@ sensors): the sequence that measures it and the kind of calibration of each chan
 device stores the name of the profile with its sequence (setup=<name>) and reports it in
 extinfo ("setup": {"adc_brd": "hf_ntc_v01"}), so redvypr recognises the setup by itself.
 Design: firmware repository, doc/design_aufbau_profile.md.
+
+Profiles are also items of type 'setup' of the redvypr metadata (redvypr.items.SetupItem,
+design note doc/source/design_items.rst): update_from_items() takes them over, they win over the
+built-in profiles of the same name. New profiles can so be made without a change of the code.
 """
 
 import dataclasses
+import logging
 
 from . import adc_sequence
+
+logger = logging.getLogger('redvypr.device.norlog.adc_setups')
 
 
 @dataclasses.dataclass(frozen=True)
@@ -22,6 +29,30 @@ class ChannelCal:
     hint: str = ""
     # ntc: R_ref from an item of the channel (redvypr.items), (role, field), e.g. ('board', 'R1')
     scale_ref: tuple = ()
+    # slot of the item measured by the channel, e.g. a terminal 'J2.3-4' (redvypr.items)
+    slot: str = ""
+
+    def to_dict(self):
+        d = {'cal': self.kind}
+        if self.unit:
+            d['unit'] = self.unit
+        if self.kind == 'ntc' or self.scale != 1.0:
+            d['scale'] = self.scale
+        if self.scale_ref:
+            d['scale_ref'] = list(self.scale_ref)
+        if self.slot:
+            d['slot'] = self.slot
+        if self.hint:
+            d['hint'] = self.hint
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        d = d or {}
+        ref = d.get('scale_ref') or ()
+        return cls(kind=str(d.get('cal', d.get('kind', 'poly'))), unit=str(d.get('unit', '')),
+                   scale=float(d.get('scale', 1.0)), hint=str(d.get('hint', '')),
+                   scale_ref=tuple(ref) if len(ref) == 2 else (), slot=str(d.get('slot', '')))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -32,6 +63,8 @@ class Setup:
     sensor: str
     text: str                                   # sequence without setup=, the name is added
     channels: dict = dataclasses.field(default_factory=dict)    # channel -> ChannelCal
+    board_type: str = ""                        # item type of the board (redvypr.items)
+    builtin: bool = True                        # False: from an item of the metadata
 
     def sequence(self):
         """The sequence of the profile (with setup=<name>)."""
@@ -40,7 +73,8 @@ class Setup:
         return seq
 
 
-SETUPS = {}
+SETUPS = {}              # built-in profiles
+ITEM_SETUPS = {}        # profiles from items of type 'setup' (update_from_items())
 
 
 def _add(setup):
@@ -56,25 +90,77 @@ _add(Setup(
                  "and VBIAS at the negative input (sensor must be floating), NTCs ratiometric with 100 uA "
                  "against R_ref = 10 kOhm (REF1 = AIN6/AIN7)."),
     sensor="adc_brd",
+    board_type="breakout_v01",
     text=("on=1,sps=5,filter=sinc3,interval=10000;hf0,0,1,128,INT,0,-,-,10,1;hf1,2,3,128,INT,0,-,-,10,3;"
           "ntc0,4,6,1,REF1,100,4,-,20;ntc1,5,6,1,REF1,100,5,-,20"),
     channels={
-        "hf0": ChannelCal("poly", "W/m2", hint="linear: c1 = 1 / sensitivity [W/m2 per V]"),
-        "hf1": ChannelCal("poly", "W/m2", hint="linear: c1 = 1 / sensitivity [W/m2 per V]"),
-        "ntc0": ChannelCal("ntc", "degC", scale=10000.0, scale_ref=("board", "R1"),
+        "hf0": ChannelCal("poly", "W/m2", hint="linear: c1 = 1 / sensitivity [W/m2 per V]", slot="J2.1-2"),
+        "hf1": ChannelCal("poly", "W/m2", hint="linear: c1 = 1 / sensitivity [W/m2 per V]", slot="J2.5-6"),
+        "ntc0": ChannelCal("ntc", "degC", scale=10000.0, scale_ref=("board", "R1"), slot="J2.3-4",
                            hint="NTC, scale = R_ref = R1 of the board (nominal 10000)"),
-        "ntc1": ChannelCal("ntc", "degC", scale=10000.0, scale_ref=("board", "R1"),
+        "ntc1": ChannelCal("ntc", "degC", scale=10000.0, scale_ref=("board", "R1"), slot="J2.7-8",
                            hint="NTC, scale = R_ref = R1 of the board (nominal 10000)"),
     },
 ))
 
 
 def get(name):
-    return SETUPS.get(name or "")
+    """A profile by name: from the items, else built-in."""
+    name = name or ""
+    return ITEM_SETUPS.get(name) or SETUPS.get(name)
+
+
+def all_setups():
+    merged = dict(SETUPS)
+    merged.update(ITEM_SETUPS)
+    return merged
 
 
 def for_sensor(sensor):
-    return [s for s in SETUPS.values() if s.sensor == sensor]
+    return [s for s in all_setups().values() if s.sensor == sensor]
+
+
+# --- profiles as items (redvypr.items.SetupItem) ---------------------------------------------
+
+def from_item(item):
+    """Setup of an item of type 'setup' (fields sensor and sequence needed), None if it is no ADC profile."""
+    sensor = getattr(item, 'sensor', None)
+    text = getattr(item, 'sequence', None)
+    if not sensor or not text:
+        return None
+    seq = adc_sequence.parse(text)          # raises SequenceError for an invalid text
+    seq.setup = ''
+    channels = {ch: ChannelCal.from_dict(d) for ch, d in (item.channels or {}).items() if isinstance(d, dict)}
+    return Setup(name=item.id, title=item.title or '', description=item.description or '', sensor=str(sensor),
+                 text=seq.to_text(), channels=channels, board_type=item.board_type or '', builtin=False)
+
+
+def to_item(setup):
+    """Item of type 'setup' of a profile (to store it in the metadata / an item library)."""
+    import redvypr.items
+    seq = adc_sequence.parse(setup.text)
+    seq.setup = ''
+    return redvypr.items.SetupItem(id=setup.name, title=setup.title or None,
+                                   description=setup.description or None,
+                                   board_type=setup.board_type or None,
+                                   channels={ch: c.to_dict() for ch, c in setup.channels.items()},
+                                   sensor=setup.sensor, sequence=seq.to_text())
+
+
+def update_from_items(items):
+    """Take the profiles of the items of type 'setup' (replaces the previous ones). Returns their names."""
+    found = {}
+    for item in items or []:
+        try:
+            setup = from_item(item)
+        except Exception as exc:
+            logger.warning(f'setup item {getattr(item, "id", "?")}: {exc}')
+            continue
+        if setup is not None:
+            found[setup.name] = setup
+    ITEM_SETUPS.clear()
+    ITEM_SETUPS.update(found)
+    return sorted(found)
 
 
 def differences(seq, setup):

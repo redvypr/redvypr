@@ -937,6 +937,8 @@ class _Gateway:
         # A deleted property is sent once with an empty value.
         meta = {'hwid': hwid, 'board': info.get('board', ''), 'firmware': info.get('image') or
                 info.get('firmware', ''), **{k: v for k, v in props.items() if v not in (None, '')}}
+        if isinstance(info.get('setup'), dict) and info['setup']:
+            meta['setup'] = dict(info['setup'])      # {sensor: profile}, see redvypr.items.setup_of()
         for k in self.meta_sent.get(hwid, {}):
             meta.setdefault(k, '')
         if meta != self.meta_sent.get(hwid):
@@ -5708,12 +5710,17 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         setup_btn.setToolTip('Fill the table again with the sequence of the chosen profile (then "Write to device"); '
                              'choosing a profile loads it as well')
         setup_btn.clicked.connect(self.adc_load_setup)
+        self.adc_save_setup_btn = QtWidgets.QPushButton('Save as profile ...')
+        self.adc_save_setup_btn.setToolTip('Save the sequence of the table as setup profile: an item of type '
+                                           '"setup" in the metadata of redvypr (Items window, item library)')
+        self.adc_save_setup_btn.clicked.connect(lambda: self.adc_save_profile())
         self.adc_setup_state = QtWidgets.QLabel('')
         self.adc_setup_state.setWordWrap(True)
         setup_row = QtWidgets.QHBoxLayout()
         setup_row.addWidget(QtWidgets.QLabel('Setup'))
         setup_row.addWidget(self.adc_setup)
         setup_row.addWidget(setup_btn)
+        setup_row.addWidget(self.adc_save_setup_btn)
         setup_row.addWidget(self.adc_setup_state, 1)
         grid.addLayout(setup_row, 4, 0, 1, 9)
         # Items of the channels (redvypr.items): sensor and board, R_ref of the board
@@ -5836,14 +5843,28 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
                                         steps=[self._adc_row_step(r) for r in range(self.adc_table.rowCount())],
                                         setup=self.adc_setup.currentData() or '')
 
+    def adc_sync_setup_items(self):
+        """Profiles from the items of type 'setup' of redvypr (they win over the built-in ones)."""
+        rv = self._redvypr()
+        self.adc_save_setup_btn.setEnabled(rv is not None and hasattr(rv, 'add_item'))
+        if rv is None or not hasattr(rv, 'list_items'):
+            return
+        try:
+            adc_setups.update_from_items(rv.list_items(itemtype=ritems.SetupItem.ITEMTYPE))
+        except Exception:
+            logger.warning('could not read the setup items', exc_info=True)
+
     def adc_fill_setups(self, sensor, current=''):
         """Profiles of the sensor in the setup combo box; an unknown name of the device is added."""
+        self.adc_sync_setup_items()
         loading, self.adc_loading = self.adc_loading, True
         self.adc_setup.clear()
         self.adc_setup.addItem('- none -', '')
         for setup in adc_setups.for_sensor(sensor):
             self.adc_setup.addItem(setup.name, setup.name)
-            self.adc_setup.setItemData(self.adc_setup.count() - 1, f'{setup.title}\n{setup.description}',
+            origin = 'built-in' if setup.builtin else 'item setup/' + setup.name
+            self.adc_setup.setItemData(self.adc_setup.count() - 1,
+                                       f'{setup.title}\n{setup.description}\n({origin})',
                                        QtCore.Qt.ItemDataRole.ToolTipRole)
         if current and self.adc_setup.findData(current) < 0:
             self.adc_setup.addItem(f'{current} (unknown)', current)
@@ -5859,6 +5880,62 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.adc_show_sequence(setup.sequence(), self._adc_table_values())
         self.adc_status.setStyleSheet('color: #c08000;')
         self.adc_status.setText(f'profile {setup.name} loaded - not yet written to the device. {setup.description}')
+
+    def adc_save_profile(self, name=None, title=None, valid_from=None):
+        """
+        Save the sequence of the table as setup profile (item 'setup/<name>' of redvypr). The channels
+        keep the properties of the chosen profile (slot, R_ref from the board), others get the kind and
+        unit of their calibration on the device. Returns the name or None.
+        """
+        rv = self._redvypr()
+        if rv is None or not hasattr(rv, 'add_item'):
+            return None
+        sensor = self.adc_sensor.currentText()
+        base = adc_setups.get(self.adc_setup.currentData())
+        if name is None:
+            name, ok = QtWidgets.QInputDialog.getText(self, 'Save as profile',
+                                                      'Name (1-23 characters a-z A-Z 0-9 _):',
+                                                      text=self.adc_setup.currentData() or '')
+            if not ok:
+                return None
+            title, ok = QtWidgets.QInputDialog.getText(self, 'Save as profile', 'Title (optional):',
+                                                       text=base.title if base else '')
+            if not ok:
+                return None
+        name = (name or '').strip()
+        try:
+            adc_sequence.parse(f'setup={name};x,0,COM')
+        except adc_sequence.SequenceError as exc:
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText(f'profile not saved: {exc}')
+            return None
+        seq = self.adc_sequence_from_gui()
+        seq.setup = ''
+        cals = self.adc_cals.get(sensor, {})
+        channels = {}
+        for st in seq.steps:
+            if base is not None and st.name in base.channels:
+                channels[st.name] = base.channels[st.name]
+                continue
+            cal = cals.get(st.name)
+            if cal is not None:
+                channels[st.name] = adc_setups.ChannelCal(cal.kind, cal.unit,
+                                                          scale=cal.scale if cal.kind == 'ntc' else 1.0)
+        setup = adc_setups.Setup(name=name, title=(title or '').strip() or (base.title if base else name),
+                                 description=base.description if base else '', sensor=sensor, text=seq.to_text(),
+                                 channels=channels, board_type=base.board_type if base else '', builtin=False)
+        try:
+            rv.add_item(adc_setups.to_item(setup), valid_from=valid_from)
+        except Exception as exc:
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText(f'profile not saved: {exc}')
+            return None
+        self.adc_fill_setups(sensor, name)
+        self.adc_changed()
+        self.adc_status.setStyleSheet('color: #c08000;')
+        self.adc_status.setText(f'profile {name} saved as item setup/{name} - "Write to device" stores the name '
+                                f'on the device; save the item library to keep it')
+        return name
 
     def _redvypr(self):
         return getattr(self.device, 'redvypr', None)
