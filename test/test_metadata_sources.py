@@ -140,3 +140,40 @@ def test_redvypr_item_library(tmp_path):
     assert r.get_config().item_libraries == [path]
     with pytest.raises(ValueError):
         redvypr.Redvypr(hostname='libtest2').save_item_library()
+
+
+def test_sqlite_item_library(tmp_path):
+    # Items in an SQLite file (e.g. inventory.sqlite): table redvypr_metadata, other metadata stays
+    from redvypr.datasource import DataSourceConfig, SqliteReader
+    from redvypr.serialize import serialize_json
+    path = str(tmp_path / 'inventory.sqlite')
+    other = "temp @ d:'ctd_01'"
+    s = {}
+    items.add_item(s, items.Item(itemtype='breakout_v01', id='BO-003', mpn='X'), valid_from=T0)
+    s.update(storage_with(other, {'unit': 'degC'}))
+    assert ms.save_item_library(path, s) == 1
+    con = sqlite3.connect(path)
+    con.execute('INSERT INTO redvypr_metadata (redvypr_address, uuid, metadata) VALUES (?, ?, ?)',
+                (other, 'u', serialize_json(storage_with(other, {'unit': 'degC'})[other])))
+    con.commit()
+    con.close()
+    lib = ms.load_item_library(path)
+    assert list(lib) == [BO]
+    assert all(e['constraints']['source'] == 'library:inventory.sqlite' for e in lib[BO])
+    assert items.get_item(lib, 'breakout_v01/BO-003', at_time=T1).mpn == 'X'
+    # saved again with a change: the item is replaced, the other address stays
+    items.add_item(s, items.Item(itemtype='breakout_v01', id='BO-003', mpn='X', batch='B'), valid_from=T1)
+    assert ms.save_item_library(path, s) == 1
+    con = sqlite3.connect(path)
+    rows = sorted(r[0] for r in con.execute('SELECT redvypr_address FROM redvypr_metadata'))
+    con.close()
+    assert rows == sorted([BO, other])
+    assert items.get_item(ms.load_item_library(path), 'breakout_v01/BO-003', at_time=T2).batch == 'B'
+    # a normal database reader sees the items as well
+    reader = SqliteReader(DataSourceConfig(name='inv', filepath=path))
+    assert reader.get_metadata(BO, at_time=T2)['batch'] == 'B'
+    reader.close()
+    # missing file: error on load, created on save
+    import pytest
+    with pytest.raises(FileNotFoundError):
+        ms.load_item_library(str(tmp_path / 'none.sqlite'))

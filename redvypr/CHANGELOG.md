@@ -20,8 +20,10 @@ redvypr changelog
   libraries and databases with a precedence per kind of source (items: library > instance > db)
   and reports conflicts. `DbReader.get_metadata()`/`get_items()` use the metadata of the database
   merged with the running instance (set by the `DatasourceRegistry`), so later corrections reach
-  old data; `DbReader.metadata_conflicts()`. Item library files (YAML): configuration
-  `item_libraries`, `Redvypr.load_item_library()`, `save_item_library()`.
+  old data; `DbReader.metadata_conflicts()`. Item library files (YAML or SQLite, e.g. an
+  `inventory.sqlite`, by the suffix .sqlite/.sqlite3/.db: table `redvypr_metadata`, only the item
+  addresses are replaced): configuration `item_libraries`, `Redvypr.load_item_library()`,
+  `save_item_library()`.
 - Items window (step 3, button "Items" in the main window): tree of the items by parent at a
   chosen time, type filter, form of the selected item saved as new values from a time on,
   additional fields, history with validity and source, new item or copy (optional uuid), move to

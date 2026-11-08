@@ -368,6 +368,11 @@ Storage and exchange
   ``save_config``) with only the entries of ``@i:'item'``, for a git
   repository shared by several computers. Load and save from the GUI;
   loading the same file again adds nothing (merge rules of the storage).
+  The library can also be an **SQLite file** (suffix ``.sqlite``,
+  ``.sqlite3``, ``.db``, e.g. ``inventory.sqlite``): the item addresses in
+  the table ``redvypr_metadata`` (the format of the databases written by
+  redvypr, so a database reader sees them too); saving replaces only the
+  item addresses, other metadata and tables of the file stay.
 * Removing an item deletes its history; normally an item gets
   ``status: retired`` instead.
 

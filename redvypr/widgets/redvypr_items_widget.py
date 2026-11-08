@@ -23,6 +23,10 @@ UTC = datetime.timezone.utc
 FORM_SKIP = ('itemtype', 'id', 'type_revision')
 
 
+LIBRARY_FILTER = ('Item library (*.yaml *.yml *.sqlite *.sqlite3 *.db);;YAML (*.yaml *.yml);;'
+                  'SQLite (*.sqlite *.sqlite3 *.db);;All files (*)')
+
+
 def now_utc():
     return datetime.datetime.now(UTC)
 
@@ -482,8 +486,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
 
     def load_library(self, path=None):
         if not path:
-            path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Load item library', '',
-                                                            'YAML (*.yaml *.yml);;All files (*)')
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Load item library', '', LIBRARY_FILTER)
         if not path:
             return
         try:
@@ -497,8 +500,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
     def save_library(self, path=None):
         if not path:
             default = self.redvypr.item_libraries[0] if self.redvypr.item_libraries else 'items.yaml'
-            path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save item library', default,
-                                                            'YAML (*.yaml *.yml);;All files (*)')
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save item library', default, LIBRARY_FILTER)
         if not path:
             return
         try:

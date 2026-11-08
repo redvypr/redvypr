@@ -222,16 +222,92 @@ def merge_storages(sources: typing.Iterable[typing.Tuple[str, dict]],
 
 # --- item library files ---------------------------------------------------------------
 
+SQLITE_SUFFIXES = ('.sqlite', '.sqlite3', '.db')
+
+_SQLITE_METADATA_TABLE = """
+    CREATE TABLE IF NOT EXISTS redvypr_metadata (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        redvypr_address TEXT NOT NULL,
+        uuid TEXT NOT NULL,
+        packetid TEXT,
+        device TEXT,
+        host TEXT,
+        metadata TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (redvypr_address, uuid)
+    )"""
+
+
+def is_sqlite_library(path: str) -> bool:
+    """True if an item library file is an SQLite database (by its suffix)."""
+    return os.path.splitext(str(path))[1].lower() in SQLITE_SUFFIXES
+
+
+def _read_sqlite_items(path: str) -> dict:
+    """{address: content} of the item addresses in the table redvypr_metadata of an SQLite file."""
+    import sqlite3
+    from redvypr.serialize import deserialize_json
+    if not os.path.exists(path):
+        raise FileNotFoundError(path)
+    con = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
+    try:
+        try:
+            rows = con.execute('SELECT redvypr_address, metadata FROM redvypr_metadata').fetchall()
+        except sqlite3.OperationalError:     # no metadata table: no items
+            rows = []
+    finally:
+        con.close()
+    data = {}
+    for address, content in rows:
+        if not redvypr_items.parse_item_address(address):
+            continue
+        content = deserialize_json(content) if isinstance(content, str) else content
+        if isinstance(content, dict) and '_redvypr' in content:
+            continue
+        part = redvypr_metadata.normalize_metadata({address: content})
+        for a, entries in part.items():
+            data.setdefault(a, []).extend(entries)
+    return data
+
+
+def _write_sqlite_items(path: str, out: dict):
+    """
+    Replaces the item addresses in the table redvypr_metadata of an SQLite file
+    (created if missing) by out {address: [entries]}; other metadata and tables stay.
+    """
+    import sqlite3
+    from redvypr.serialize import serialize_json
+    con = sqlite3.connect(path)
+    try:
+        with con:
+            con.execute(_SQLITE_METADATA_TABLE)
+            old = [r[0] for r in con.execute('SELECT DISTINCT redvypr_address FROM redvypr_metadata')]
+            for address in old:
+                if redvypr_items.parse_item_address(address):
+                    con.execute('DELETE FROM redvypr_metadata WHERE redvypr_address = ?', (address,))
+            for address, entries in out.items():
+                con.execute('INSERT INTO redvypr_metadata (redvypr_address, uuid, metadata, packetid, device, host) '
+                            'VALUES (?, ?, ?, ?, ?, ?)',
+                            (address, '', serialize_json(entries), redvypr_items.ITEM_PACKETID,
+                             None, None))
+    finally:
+        con.close()
+
+
 def load_item_library(path: str) -> dict:
     """
-    Storage of an item library file (YAML, storage format {address: [entries]}
-    or simple format {address: {key: value}}), entries tagged 'library:<file name>'.
-    Only item addresses are taken.
+    Storage of an item library file, entries tagged 'library:<file name>'. Only
+    item addresses are taken. YAML (storage format {address: [entries]} or simple
+    format {address: {key: value}}) or an SQLite file (suffix .sqlite, .sqlite3,
+    .db; table redvypr_metadata as written by redvypr, e.g. an inventory database).
     """
-    with open(path, 'r', encoding='utf-8') as f:
-        data = yaml.safe_load(f) or {}
-    if isinstance(data, dict) and 'items' in data and isinstance(data['items'], dict):
-        data = data['items']
+    if is_sqlite_library(path):
+        data = _read_sqlite_items(path)
+    else:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f) or {}
+        if isinstance(data, dict) and 'items' in data and isinstance(data['items'], dict):
+            data = data['items']
     storage = redvypr_metadata.normalize_metadata(data)
     storage = {a: e for a, e in storage.items() if redvypr_items.parse_item_address(a)}
     return tag_storage(storage, f'library:{os.path.basename(path)}', force=True)
@@ -240,7 +316,9 @@ def load_item_library(path: str) -> dict:
 def save_item_library(path: str, storage: dict) -> int:
     """
     Writes the item entries of a storage into a library file (storage format,
-    without hostinfo and source). Returns the number of items.
+    without hostinfo and source), YAML or SQLite by the suffix (see
+    load_item_library(); in an SQLite file only the item addresses are replaced).
+    Returns the number of items.
     """
     out = {}
     for addr in sorted(storage):
@@ -252,6 +330,9 @@ def save_item_library(path: str, storage: dict) -> int:
             entries.append({'key': e['key'], 'value': e['value'], 'constraints': c})
         entries.sort(key=lambda e: (e['key'], str(e['constraints'].get('valid_from'))))
         out[addr] = entries
+    if is_sqlite_library(path):
+        _write_sqlite_items(path, out)
+        return len(out)
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
         f.write('# redvypr item library (design note design_items.rst)\n')
