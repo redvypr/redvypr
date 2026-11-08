@@ -43,8 +43,8 @@ def tree(storage):
 def test_refs_and_addresses():
     assert items.make_ref('ntc_sensor', '0042') == 'ntc_sensor/0042'
     assert items.parse_ref('cable/A/7') == ('cable', 'A/7')
-    addr = items.item_address('breakout_v01', 'BO-003')
-    assert items.parse_item_address(addr) == ('breakout_v01', 'BO-003')
+    addr = items.item_address('breakout_board_v01', 'BO-003')
+    assert items.parse_item_address(addr) == ('breakout_board_v01', 'BO-003')
     assert RedvyprAddress(addr).packetid == 'item'
     assert items.parse_item_address("temp @ d:'x' and si:'y'") is None
     for bad in ("x'y", '', None):
@@ -274,10 +274,10 @@ def test_item_address_with_deviceid():
     addr = items.item_address('norlog_v02', '30572ED22A0BE4E8')
     assert "di:'30572ED22A0BE4E8'" in addr and 'si:' not in addr
     assert items.parse_item_address(addr) == ('norlog_v02', '30572ED22A0BE4E8')
-    assert items.parse_item_address("@i:'item' and d:'breakout_v01' and si:'BO-001'") is None
+    assert items.parse_item_address("@i:'item' and d:'breakout_board_v01' and si:'BO-001'") is None
     assert items.parse_item_address("@i:'item' and d:'x' and di:'a' and si:'b'") is None
     s = {}
-    md.add_metadata_to_entries(md.create_metadata_dict("@i:'item' and d:'breakout_v01' and si:'BO-001'",
+    md.add_metadata_to_entries(md.create_metadata_dict("@i:'item' and d:'breakout_board_v01' and si:'BO-001'",
                                                        {'name': 'old'}, valid_from=T0), s)
-    assert items.get_item(s, 'breakout_v01/BO-001', at_time=T1, builtin=False) is None
+    assert items.get_item(s, 'breakout_board_v01/BO-001', at_time=T1, builtin=False) is None
     assert items.list_items(s, at_time=T1) == []

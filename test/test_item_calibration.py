@@ -27,11 +27,11 @@ def ntc_cal(sn='0042', beta=3950.0, date=datetime.datetime(2026, 10, 1, tzinfo=U
 def setup_storage(r1=10002.7):
     s = {}
     items.add_item(s, norlog_items.NorlogV02(id='N-1', deviceid='AA'), valid_from=T0)
-    bo = norlog_items.BreakoutV01(id='BO-3', parent='norlog_v02/N-1')
+    bo = norlog_items.BreakoutBoardV01(id='BO-3', parent='norlog_v02/N-1')
     if r1 is not None:
         bo.R1 = items.Quantity(value=r1, unit='Ohm')
     items.add_item(s, bo, valid_from=T0)
-    items.add_item(s, norlog_items.NtcSensor(id='0042', parent='breakout_v01/BO-3', slot='ntc0'), valid_from=T0)
+    items.add_item(s, norlog_items.NtcSensor(id='0042', parent='breakout_board_v01/BO-3', slot='ntc0'), valid_from=T0)
     md.add_metadata_to_entries(md.create_metadata_dict("@di:'AA' and u:'x'", {'setup': {'adc_brd': 'hf_ntc_v01'}},
                                                        valid_from=T0), s)
     return s
@@ -50,7 +50,7 @@ def test_two_stages():
     x = 10000.0 / 10002.7                   # R = 10 kOhm: 25 degC
     res = ic.apply_calibration(s, ADDR, x, at_time=T1, calibrations=[ntc_cal()])
     assert res.ok and abs(res.value - 25.0) < 1e-9 and res.unit == 'degC'
-    assert res.scale == 10002.7 and res.scale_source == 'R1 of breakout_v01/BO-3'
+    assert res.scale == 10002.7 and res.scale_source == 'R1 of breakout_board_v01/BO-3'
     # array
     res = ic.apply_calibration(s, ADDR, [x, x], at_time=T1, calibrations=[ntc_cal()])
     assert np.allclose(res.value, 25.0)

@@ -51,13 +51,13 @@ Address
 
     @i:'item' and d:'<itemtype>' and di:'<id>'
 
-e.g. ``@i:'item' and d:'breakout_v01' and di:'BO-003'``. ``i:'item'`` keeps
+e.g. ``@i:'item' and d:'breakout_board_v01' and di:'BO-003'``. ``i:'item'`` keeps
 items apart from data sources (a device called like an item type gets no item
 metadata) and allows to list all items with the query ``@i:'item'``. Like
 ``d`` and ``di`` of a data source (kind of device and this one device), ``d``
 is the item type and ``di`` the id of the item. The
 item reference used elsewhere is the short form ``<itemtype>/<id>``
-(``breakout_v01/BO-003``). The id is the serial number of a physical item or
+(``breakout_board_v01/BO-003``). The id is the serial number of a physical item or
 the name of a template (see setup profiles).
 
 Ids are **unique per item type** (``d`` together with ``si``):
@@ -91,11 +91,11 @@ An item type is a pydantic model with ``model_config = ConfigDict(extra='allow')
   ``parent``, ``slot``, ``status``, ``attachments``, ``comment``. Works for
   any device without code; unknown fields are kept.
 * Specific types derive from ``Item`` and add fields with validation, e.g.
-  ``norlog_v02`` (``deviceid`` = hardware ID), ``breakout_v01`` with ``R1`` (quantity),
+  ``norlog_v02`` (``deviceid`` = hardware ID), ``breakout_board_v01`` with ``R1`` (quantity),
   ``ntc_sensor`` with ``r25``, ``beta``, ``dissipation_constant``.
 
 Types register in a registry (like ``SensorFactory``); devices bring their own
-types (the norlog module brings ``norlog_v02``, ``breakout_v01``, ``setup``).
+types (the norlog module brings ``norlog_v02``, ``breakout_board_v01``, ``setup``).
 The GUI uses the specific model if the type is known, otherwise ``Item``.
 
 Revisions of item types
@@ -144,9 +144,9 @@ packet, so redvypr can check or create the ``parent`` entry), or detects it
 with an id chip on the board. Example::
 
     norlog_v02/N-012          deviceid: 0xA1B2...
-     +- breakout_v01/BO-003   parent: norlog_v02/N-012   R1: 10002.7 Ohm
-         +- ntc_sensor/0042   parent: breakout_v01/BO-003, slot: ntc0
-         +- hf_sensor/HF-17   parent: breakout_v01/BO-003, slot: hf0
+     +- breakout_board_v01/BO-003   parent: norlog_v02/N-012   R1: 10002.7 Ohm
+         +- ntc_sensor/0042   parent: breakout_board_v01/BO-003, slot: ntc0
+         +- hf_sensor/HF-17   parent: breakout_board_v01/BO-003, slot: hf0
 
 The slot is free: the channel name (``ntc0``) is the simplest case and needs
 nothing else. Who wants the terminals uses them (``J2.3-4``) and a setup
@@ -169,7 +169,7 @@ A setup profile is an item of type ``setup`` with its name as id. It is a
 template, not a physical thing, and optional::
 
     setup/hf_ntc_v01
-        board_type: breakout_v01
+        board_type: breakout_board_v01
         sequence: "on=1,sps=5,filter=sinc3,...;hf0,0,1,128,..."
         channels:
           ntc0: {slot: J2.3-4, cal: ntc, unit: degC, scale: 10000}
@@ -484,7 +484,7 @@ Steps
    Assigning items from the address widget and the ADC tab follow with step 4.
 4. **Done** (``redvypr/items.py``: ``param_value()``, ``resolve_param()``;
    ``devices/norlog/norlog_items.py``: ``norlog_v02``, ``norlog_v021``,
-   ``breakout_v01`` with ``R1``, ``ntc_sensor``, ``hf_sensor``; profile
+   ``breakout_board_v01`` with ``R1``, ``ntc_sensor``, ``hf_sensor``; profile
    channels name the parameter, ``ChannelCal.scale_ref = ('board', 'R1')``).
    The norlog calibration is applied on the device, so the scale is a number
    there: the ADC tab shows the items of every channel (sensor, board) and

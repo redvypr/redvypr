@@ -358,8 +358,8 @@ def item_from_fields(itemtype: str, item_id: str, fields: dict) -> Item:
 def get_item(storage: dict, ref_or_type: str, item_id: typing.Optional[str] = None,
              at_time=None, builtin: bool = True, keys: typing.Optional[dict] = None) -> typing.Optional[Item]:
     """
-    An item at a time (default now): get_item(storage, 'breakout_v01/BO-003') or
-    get_item(storage, 'breakout_v01', 'BO-003'). None if it has no fields at that time;
+    An item at a time (default now): get_item(storage, 'breakout_board_v01/BO-003') or
+    get_item(storage, 'breakout_board_v01', 'BO-003'). None if it has no fields at that time;
     then a built-in item of that reference if builtin (register_builtin_item()).
 
     The item reads the entries at its own address and the defaults at '@i:'item'' (all items) and

@@ -38,7 +38,7 @@ class CalibrationResult:
     items: dict = dataclasses.field(default_factory=dict)       # role -> item
     calibration: typing.Any = None
     scale: float = 1.0
-    scale_source: str = ''          # e.g. 'R1 of breakout_v01/BO-003', 'nominal 10000', ''
+    scale_source: str = ''          # e.g. 'R1 of breakout_board_v01/BO-003', 'nominal 10000', ''
     problems: list = dataclasses.field(default_factory=list)
 
     @property

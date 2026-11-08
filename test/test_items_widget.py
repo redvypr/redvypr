@@ -23,8 +23,8 @@ def widget():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     r = redvypr.Redvypr(hostname='itemswidget')
     r.add_item(items.Item(itemtype='norlog_v02', id='N-012', deviceid='0xA1B2'), valid_from=T0)
-    r.add_item(items.Item(itemtype='breakout_v01', id='BO-003', parent='norlog_v02/N-012'), valid_from=T0)
-    r.add_item(items.Item(itemtype='ntc_sensor', id='0042', parent='breakout_v01/BO-003', slot='ntc0'),
+    r.add_item(items.Item(itemtype='breakout_board_v01', id='BO-003', parent='norlog_v02/N-012'), valid_from=T0)
+    r.add_item(items.Item(itemtype='ntc_sensor', id='0042', parent='breakout_board_v01/BO-003', slot='ntc0'),
                valid_from=T0)
     w = iw.RedvyprItemsWidget(redvypr_instance=r)
     yield w
@@ -59,16 +59,16 @@ def test_value_conversion():
 
 def test_tree_form_and_save(widget):
     w = widget
-    assert tree_refs(w) == [(0, 'norlog_v02/N-012'), (1, 'breakout_v01/BO-003'), (2, 'ntc_sensor/0042')]
-    select(w, 'breakout_v01/BO-003')
-    assert w.current_ref == 'breakout_v01/BO-003' and 'parent' in w.form_fields
+    assert tree_refs(w) == [(0, 'norlog_v02/N-012'), (1, 'breakout_board_v01/BO-003'), (2, 'ntc_sensor/0042')]
+    select(w, 'breakout_board_v01/BO-003')
+    assert w.current_ref == 'breakout_board_v01/BO-003' and 'parent' in w.form_fields
     w.form_fields['mpn'][0].setText('BRK-1')
     w.new_key.setText('R1')
     w.add_field()
     w.form_fields['R1'][0].setText('{"value": 10002.7, "unit": "Ohm"}')
     w.save_item()
-    item = w.redvypr.get_item('breakout_v01/BO-003')
-    assert item.mpn == 'BRK-1' and items.param_value(item.R1) == 10002.7   # dict or Quantity (breakout_v01 type)
+    item = w.redvypr.get_item('breakout_board_v01/BO-003')
+    assert item.mpn == 'BRK-1' and items.param_value(item.R1) == 10002.7   # dict or Quantity (breakout_board_v01 type)
     assert 'saved' in w.status.text()
     keys = {w.history.item(r, 0).text() for r in range(w.history.rowCount())}
     assert {'mpn', 'R1', 'parent'} <= keys
@@ -88,7 +88,7 @@ def test_new_copy_move_and_state_at(widget):
     assert w.create_item('ntc_sensor', '0044', valid_from=T0, source=src)
     assert w.redvypr.get_item('ntc_sensor/0044').slot == 'ntc0'
     # move 0042 to slot ntc1 from T1 on; the state at T0 shows the old slot
-    assert w.move(w.redvypr.get_item('ntc_sensor/0042'), 'breakout_v01/BO-003', 'ntc1', T1)
+    assert w.move(w.redvypr.get_item('ntc_sensor/0042'), 'breakout_board_v01/BO-003', 'ntc1', T1)
     assert w.redvypr.get_item('ntc_sensor/0042').slot == 'ntc1'
     w.use_now.setChecked(False)
     w.at_time.setDateTime(iw._qdt(T0 + datetime.timedelta(days=1)))
@@ -114,7 +114,7 @@ def test_type_filter_and_library(widget, tmp_path):
     w2 = iw.RedvyprItemsWidget(redvypr_instance=r2)
     w2.load_library(path)
     assert '3 items loaded' in w2.status.text()
-    assert [ref for _d, ref in tree_refs(w2)] == ['norlog_v02/N-012', 'breakout_v01/BO-003', 'ntc_sensor/0042']
+    assert [ref for _d, ref in tree_refs(w2)] == ['norlog_v02/N-012', 'breakout_board_v01/BO-003', 'ntc_sensor/0042']
     w2.close()
 
 
@@ -133,9 +133,9 @@ def test_delete_item(widget, tmp_path):
     w.save_library(path)
     asked = []
     # breakout has a child: the question names it; answered no: nothing happens
-    assert not w.delete_item('breakout_v01/BO-003', confirm=lambda t: asked.append(t) or False)
+    assert not w.delete_item('breakout_board_v01/BO-003', confirm=lambda t: asked.append(t) or False)
     assert 'ntc_sensor/0042' in asked[0]
-    assert w.redvypr.get_item('breakout_v01/BO-003') is not None
+    assert w.redvypr.get_item('breakout_board_v01/BO-003') is not None
     # a wrong item deleted, also from the library at the next save
     w.redvypr.add_item(items.Item(itemtype='norlog_v02', id='WRONG'), valid_from=T0)
     w.refresh()
@@ -163,7 +163,7 @@ def test_sn_column_and_move_dialog_labels(widget):
     for i in range(w.tree.topLevelItemCount()):
         walk(w.tree.topLevelItem(i))
     assert rows['norlog_v02/6BD51FFD60A7F08E'] == '003'
-    bo = w.redvypr.get_item('breakout_v01/BO-003')
+    bo = w.redvypr.get_item('breakout_board_v01/BO-003')
     dlg = iw.MoveItemDialog(w, bo, w.redvypr.list_items())
     labels = [dlg.parent_ref.itemText(i) for i in range(dlg.parent_ref.count())]
     assert 'norlog_v02/6BD51FFD60A7F08E (sn 003)' in labels
@@ -179,6 +179,6 @@ def test_flat_list(widget):
     w = widget
     assert [d for d, _r in tree_refs(w)] == [0, 1, 2]           # tree
     w.flat.setChecked(True)
-    assert tree_refs(w) == [(0, 'breakout_v01/BO-003'), (0, 'norlog_v02/N-012'), (0, 'ntc_sensor/0042')]
+    assert tree_refs(w) == [(0, 'breakout_board_v01/BO-003'), (0, 'norlog_v02/N-012'), (0, 'ntc_sensor/0042')]
     w.flat.setChecked(False)
     assert [d for d, _r in tree_refs(w)] == [0, 1, 2]

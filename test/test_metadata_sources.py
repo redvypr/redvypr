@@ -12,7 +12,7 @@ from redvypr import metadata_sources as ms
 T0 = '2026-11-01T00:00:00+00:00'
 T1 = '2026-11-10T00:00:00+00:00'
 T2 = '2026-12-01T00:00:00+00:00'
-BO = items.item_address('breakout_v01', 'BO-003')
+BO = items.item_address('breakout_board_v01', 'BO-003')
 
 
 def storage_with(address, values, valid_from=T0, valid_until=None):
@@ -89,8 +89,8 @@ def test_same_kind_later_value_wins_without_conflict():
 
 def test_library_file_roundtrip(tmp_path):
     s = {}
-    items.add_item(s, items.Item(itemtype='breakout_v01', id='BO-003', mpn='X', comment='c'), valid_from=T0)
-    items.add_item(s, items.Item(itemtype='breakout_v01', id='BO-003', mpn='X'), valid_from=T1)
+    items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X', comment='c'), valid_from=T0)
+    items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X'), valid_from=T1)
     s.update(storage_with("temp @ d:'ctd_01'", {'unit': 'degC'}))     # not an item: not in the file
     path = str(tmp_path / 'items.yaml')
     assert ms.save_item_library(path, s) == 1
@@ -99,8 +99,8 @@ def test_library_file_roundtrip(tmp_path):
     lib = ms.load_item_library(path)
     assert list(lib) == [BO]
     assert all(e['constraints']['source'] == 'library:items.yaml' for e in lib[BO])
-    assert items.get_item(lib, 'breakout_v01/BO-003', at_time=T2).comment is None
-    assert items.get_item(lib, 'breakout_v01/BO-003', at_time='2026-11-05T00:00:00Z').comment == 'c'
+    assert items.get_item(lib, 'breakout_board_v01/BO-003', at_time=T2).comment is None
+    assert items.get_item(lib, 'breakout_board_v01/BO-003', at_time='2026-11-05T00:00:00Z').comment == 'c'
 
 
 def test_dbreader_uses_further_sources(tmp_path):
@@ -149,7 +149,7 @@ def test_sqlite_item_library(tmp_path):
     path = str(tmp_path / 'inventory.sqlite')
     other = "temp @ d:'ctd_01'"
     s = {}
-    items.add_item(s, items.Item(itemtype='breakout_v01', id='BO-003', mpn='X'), valid_from=T0)
+    items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X'), valid_from=T0)
     s.update(storage_with(other, {'unit': 'degC'}))
     assert ms.save_item_library(path, s) == 1
     con = sqlite3.connect(path)
@@ -160,15 +160,15 @@ def test_sqlite_item_library(tmp_path):
     lib = ms.load_item_library(path)
     assert list(lib) == [BO]
     assert all(e['constraints']['source'] == 'library:inventory.sqlite' for e in lib[BO])
-    assert items.get_item(lib, 'breakout_v01/BO-003', at_time=T1).mpn == 'X'
+    assert items.get_item(lib, 'breakout_board_v01/BO-003', at_time=T1).mpn == 'X'
     # saved again with a change: the item is replaced, the other address stays
-    items.add_item(s, items.Item(itemtype='breakout_v01', id='BO-003', mpn='X', batch='B'), valid_from=T1)
+    items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X', batch='B'), valid_from=T1)
     assert ms.save_item_library(path, s) == 1
     con = sqlite3.connect(path)
     rows = sorted(r[0] for r in con.execute('SELECT redvypr_address FROM redvypr_metadata'))
     con.close()
     assert rows == sorted([BO, other])
-    assert items.get_item(ms.load_item_library(path), 'breakout_v01/BO-003', at_time=T2).batch == 'B'
+    assert items.get_item(ms.load_item_library(path), 'breakout_board_v01/BO-003', at_time=T2).batch == 'B'
     # a normal database reader sees the items as well
     reader = SqliteReader(DataSourceConfig(name='inv', filepath=path))
     assert reader.get_metadata(BO, at_time=T2)['batch'] == 'B'
@@ -195,7 +195,7 @@ def test_several_libraries_with_calibrations(tmp_path):
     inv = str(tmp_path / 'inventory_norlog.yaml')
     cals = str(tmp_path / 'calibrations.yaml')
     s = {}
-    items.add_item(s, items.Item(itemtype='breakout_v01', id='BO-003', mpn='X'), valid_from=T0)
+    items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X'), valid_from=T0)
     ms.save_item_library(inv, s)
     c1 = ntc('NTC-1')
     a1 = c1.create_redvypr_address().to_address_string()
@@ -214,13 +214,13 @@ def test_several_libraries_with_calibrations(tmp_path):
     c2 = ntc('NTC-2')
     a2 = c2.create_redvypr_address().to_address_string()
     r.set_metadata_from_dict({a2: {'calibration': c2.model_dump(mode='json')}})
-    r.add_item(items.Item(itemtype='breakout_v01', id='BO-003', mpn='X', batch='B'), valid_from=T1)
+    r.add_item(items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X', batch='B'), valid_from=T1)
     saved = r.save_item_libraries()
     assert saved == {inv: 2, cals: 2}
     lib_inv = ms.load_item_library(inv)
     lib_cal = ms.load_item_library(cals)
     assert sorted(lib_inv) == sorted([BO, items.item_address('ntc_sensor', 'NTC-2')])
-    assert items.get_item(lib_inv, 'breakout_v01/BO-003', at_time=T2).batch == 'B'
+    assert items.get_item(lib_inv, 'breakout_board_v01/BO-003', at_time=T2).batch == 'B'
     assert sorted(lib_cal) == sorted([a1, a2])
     assert sorted(c.sn for c in ic.calibrations_from_metadata(lib_cal)) == ['NTC-1', 'NTC-2']
     # save as: a new file gets only what belongs to no file
@@ -231,7 +231,7 @@ def test_several_libraries_with_calibrations(tmp_path):
 
 def test_library_yaml_has_lf_line_ends(tmp_path):
     s = {}
-    items.add_item(s, items.Item(itemtype='breakout_v01', id='BO-003', mpn='X'), valid_from=T0)
+    items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X'), valid_from=T0)
     path = str(tmp_path / 'lf.yaml')
     ms.save_item_library(path, s)
     data = open(path, 'rb').read()

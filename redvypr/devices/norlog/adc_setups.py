@@ -90,7 +90,7 @@ _add(Setup(
                  "and VBIAS at the negative input (sensor must be floating), NTCs ratiometric with 100 uA "
                  "against R_ref = 10 kOhm (REF1 = AIN6/AIN7)."),
     sensor="adc_brd",
-    board_type="breakout_v01",
+    board_type="breakout_board_v01",
     text=("on=1,sps=5,filter=sinc3,interval=10000;hf0,0,1,128,INT,0,-,-,10,1;hf1,2,3,128,INT,0,-,-,10,3;"
           "ntc0,4,6,1,REF1,100,4,-,20;ntc1,5,6,1,REF1,100,5,-,20"),
     channels={

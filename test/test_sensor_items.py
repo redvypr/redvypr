@@ -65,7 +65,7 @@ def test_sensor_in_tree():
     # a heat flux sensor of the manager on a breakout, found for a channel
     storage = {}
     items.add_item(storage, items.Item(itemtype='norlog_v02', id='N-1', deviceid='AA'), valid_from=T0)
-    items.add_item(storage, items.Item(itemtype='breakout_v01', id='B-1', parent='norlog_v02/N-1'), valid_from=T0)
-    items.add_item(storage, heatflow(parent='breakout_v01/B-1', slot='hf0'), valid_from=T0)
+    items.add_item(storage, items.Item(itemtype='breakout_board_v01', id='B-1', parent='norlog_v02/N-1'), valid_from=T0)
+    items.add_item(storage, heatflow(parent='breakout_board_v01/B-1', slot='hf0'), valid_from=T0)
     found = items.get_items(storage, "hf0 @ i:'adc_brd' and di:'AA'")
     assert isinstance(found['sensor'], sd.HeatflowClassicSensor) and found['sensor'].sn == 'HF-1'

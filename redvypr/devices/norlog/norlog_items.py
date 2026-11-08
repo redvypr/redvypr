@@ -29,12 +29,12 @@ class NorlogV021(items.Item):
 
 
 @items.register_item_type
-class BreakoutV01(items.Item):
+class BreakoutBoardV01(items.Item):
     """
     Breakout norlog_v02_breakout_v01: two heat flux sensors (hf0, hf1) and two NTCs
     (ntc0, ntc1) measured ratiometrically against R1 (REF1 = AIN6/AIN7).
     """
-    ITEMTYPE: typing.ClassVar[str] = 'breakout_v01'
+    ITEMTYPE: typing.ClassVar[str] = 'breakout_board_v01'
     REVISION: typing.ClassVar[int] = 1
     R1: typing.Optional[items.Quantity] = pydantic.Field(
         default=None, description='Reference resistor of the NTCs (nominal 10 kOhm, ERA-6ARB103V), '
