@@ -7,6 +7,7 @@ parent/slot and item library files. Design: doc/source/design_items.rst.
 import datetime
 import json
 import logging
+import os
 import types
 import typing
 
@@ -185,18 +186,22 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.btn_copy = QtWidgets.QPushButton('Copy')
         self.btn_move = QtWidgets.QPushButton('Move to ...')
         self.btn_load = QtWidgets.QPushButton('Load library ...')
-        self.btn_save_lib = QtWidgets.QPushButton('Save library ...')
+        self.btn_save_lib = QtWidgets.QPushButton('Save libraries')
+        self.btn_save_lib.setToolTip('Save every loaded library file: each item and calibration into the file '
+                                     'it was loaded from, new ones into the first file of their kind')
+        self.btn_save_as = QtWidgets.QPushButton('Save library as ...')
         self.btn_refresh = QtWidgets.QPushButton('Refresh')
         self.btn_new.clicked.connect(lambda: self.new_item())
         self.btn_copy.clicked.connect(lambda: self.new_item(copy=True))
         self.btn_move.clicked.connect(self.move_item)
         self.btn_load.clicked.connect(self.load_library)
-        self.btn_save_lib.clicked.connect(self.save_library)
+        self.btn_save_lib.clicked.connect(lambda: self.save_libraries())
+        self.btn_save_as.clicked.connect(lambda: self.save_library())
         self.btn_refresh.clicked.connect(self.refresh)
         buttons = QtWidgets.QGridLayout()
-        for i, b in enumerate((self.btn_new, self.btn_copy, self.btn_move, self.btn_load, self.btn_save_lib,
-                               self.btn_refresh)):
-            buttons.addWidget(b, i // 3, i % 3)
+        for i, b in enumerate((self.btn_new, self.btn_copy, self.btn_move, self.btn_refresh,
+                               self.btn_load, self.btn_save_lib, self.btn_save_as)):
+            buttons.addWidget(b, i // 4, i % 4)
 
         left = QtWidgets.QWidget()
         llay = QtWidgets.QVBoxLayout(left)
@@ -509,3 +514,14 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             self.set_status(f'{path} not saved: {e}', error=True)
             return
         self.set_status(f'{n} items saved in {path}')
+
+    def save_libraries(self):
+        """Saves every loaded library file; without one asks for a file name."""
+        if not self.redvypr.item_libraries:
+            return self.save_library()
+        try:
+            saved = self.redvypr.save_item_libraries()
+        except Exception as e:
+            self.set_status(f'libraries not saved: {e}', error=True)
+            return
+        self.set_status('saved: ' + ', '.join(f'{os.path.basename(p)} ({n})' for p, n in saved.items()))

@@ -23,7 +23,12 @@ redvypr changelog
   old data; `DbReader.metadata_conflicts()`. Item library files (YAML or SQLite, e.g. an
   `inventory.sqlite`, by the suffix .sqlite/.sqlite3/.db: table `redvypr_metadata`, only the item
   addresses are replaced): configuration `item_libraries`, `Redvypr.load_item_library()`,
-  `save_item_library()`.
+  `save_item_library()`. Several library files at once (e.g. `inventory_norlog.yaml`,
+  `calibrations.yaml`): a library holds items and calibrations (entries with the key
+  `calibration`, YAML sections `items` and `calibrations`); every address is saved back into
+  the file it was loaded from, new ones into the first file holding their kind
+  (`assign_library_entries()`, `Redvypr.save_item_libraries()`, Items window "Save libraries"
+  and "Save library as ...").
 - Items window (step 3, button "Items" in the main window): tree of the items by parent at a
   chosen time, type filter, form of the selected item saved as new values from a time on,
   additional fields, history with validity and source, new item or copy (optional uuid), move to

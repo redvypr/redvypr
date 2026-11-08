@@ -221,6 +221,88 @@ def merge_storages(sources: typing.Iterable[typing.Tuple[str, dict]],
 
 
 # --- item library files ---------------------------------------------------------------
+#
+# A library file holds items (all entries of item addresses) and calibrations (the entries
+# with the key 'calibration', e.g. of the sensor manager at '@i:calibration ...'). Several
+# files can be loaded (e.g. inventory_norlog.yaml, calibrations.yaml); an address belongs to
+# the file it was loaded from (source 'library:<file name>'), see assign_library_entries().
+
+LIBRARY_KINDS = ('item', 'calibration')
+
+
+def library_entries(storage: dict) -> dict:
+    """{address: (kind, entries)} of the library entries of a storage: items and calibrations."""
+    out = {}
+    for addr, entries in (storage or {}).items():
+        if not isinstance(entries, list):
+            continue
+        entries = [e for e in entries if isinstance(e, dict) and 'key' in e]
+        if redvypr_items.parse_item_address(addr):
+            if entries:
+                out[addr] = ('item', entries)
+            continue
+        cal = [e for e in entries if e['key'] == 'calibration']
+        if cal:
+            out[addr] = ('calibration', cal)
+    return out
+
+
+def library_owner(entries) -> typing.Optional[str]:
+    """File name of the library the entries were loaded from ('library:<name>'), else None."""
+    for e in entries or []:
+        for s in sources_of(e.get('constraints')):
+            s = str(s)
+            if s.startswith('library:'):
+                return s[len('library:'):].split(' (', 1)[0]
+    return None
+
+
+def assign_library_entries(storage: dict, libraries: typing.List[str]) -> dict:
+    """
+    {library path: [addresses]}: where every library address of a storage is saved. An
+    address goes back to the file it was loaded from; a new one (not from a library) to the
+    first library already holding entries of its kind (item or calibration), else to the
+    first library. Addresses of a library file not in the list are left out.
+    """
+    libraries = list(libraries or [])
+    by_name = {}
+    for path in libraries:
+        by_name.setdefault(os.path.basename(path), path)
+    lib = library_entries(storage)
+    out = {path: [] for path in libraries}
+    new = []
+    kinds_of = {path: set() for path in libraries}
+    for addr, (kind, entries) in lib.items():
+        owner = library_owner(entries)
+        if owner is None:
+            new.append((addr, kind))
+        elif owner in by_name:
+            out[by_name[owner]].append(addr)
+            kinds_of[by_name[owner]].add(kind)
+    for addr, kind in new:
+        target = next((p for p in libraries if kind in kinds_of[p]), libraries[0] if libraries else None)
+        if target is not None:
+            out[target].append(addr)
+    return out
+
+
+def _plain_value(value):
+    """A value as plain YAML/JSON data (datetimes as ISO text, numpy as lists, models as dicts)."""
+    def conv(v):
+        if isinstance(v, dict):
+            return {str(k): conv(x) for k, x in v.items()}
+        if isinstance(v, (list, tuple)):
+            return [conv(x) for x in v]
+        if isinstance(v, datetime.datetime):
+            return v.isoformat()
+        if isinstance(v, (str, int, float, bool, type(None))):
+            return v
+        if hasattr(v, 'model_dump'):
+            return conv(v.model_dump(mode='json'))
+        if hasattr(v, 'tolist'):         # numpy
+            return v.tolist()
+        return str(v)
+    return conv(value)
 
 SQLITE_SUFFIXES = ('.sqlite', '.sqlite3', '.db')
 
@@ -244,7 +326,7 @@ def is_sqlite_library(path: str) -> bool:
 
 
 def _read_sqlite_items(path: str) -> dict:
-    """{address: content} of the item addresses in the table redvypr_metadata of an SQLite file."""
+    """{address: content} of the library addresses in the table redvypr_metadata of an SQLite file."""
     import sqlite3
     from redvypr.serialize import deserialize_json
     if not os.path.exists(path):
@@ -259,8 +341,6 @@ def _read_sqlite_items(path: str) -> dict:
         con.close()
     data = {}
     for address, content in rows:
-        if not redvypr_items.parse_item_address(address):
-            continue
         content = deserialize_json(content) if isinstance(content, str) else content
         if isinstance(content, dict) and '_redvypr' in content:
             continue
@@ -272,8 +352,9 @@ def _read_sqlite_items(path: str) -> dict:
 
 def _write_sqlite_items(path: str, out: dict):
     """
-    Replaces the item addresses in the table redvypr_metadata of an SQLite file
-    (created if missing) by out {address: [entries]}; other metadata and tables stay.
+    Replaces the library addresses (items, calibrations) in the table redvypr_metadata of
+    an SQLite file (created if missing) by out {address: [entries]}; other metadata and
+    tables stay.
     """
     import sqlite3
     from redvypr.serialize import serialize_json
@@ -283,12 +364,15 @@ def _write_sqlite_items(path: str, out: dict):
             con.execute(_SQLITE_METADATA_TABLE)
             old = [r[0] for r in con.execute('SELECT DISTINCT redvypr_address FROM redvypr_metadata')]
             for address in old:
-                if redvypr_items.parse_item_address(address):
+                if redvypr_items.parse_item_address(address) or address in out:
                     con.execute('DELETE FROM redvypr_metadata WHERE redvypr_address = ?', (address,))
+            # calibrations stored at their address together with other keys: keep the other keys
+            # (rare; the sensor manager writes one address per calibration)
             for address, entries in out.items():
                 con.execute('INSERT INTO redvypr_metadata (redvypr_address, uuid, metadata, packetid, device, host) '
                             'VALUES (?, ?, ?, ?, ?, ?)',
-                            (address, '', serialize_json(entries), redvypr_items.ITEM_PACKETID,
+                            (address, '', serialize_json(entries),
+                             redvypr_items.ITEM_PACKETID if redvypr_items.parse_item_address(address) else None,
                              None, None))
     finally:
         con.close()
@@ -306,36 +390,51 @@ def load_item_library(path: str) -> dict:
     else:
         with open(path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f) or {}
-        if isinstance(data, dict) and 'items' in data and isinstance(data['items'], dict):
-            data = data['items']
+        if isinstance(data, dict) and any(k in data for k in ('items', 'calibrations')) and \
+                all(isinstance(data.get(k, {}), dict) for k in ('items', 'calibrations')):
+            joined = {}
+            for k in ('items', 'calibrations'):
+                joined.update(data.get(k) or {})
+            data = joined
     storage = redvypr_metadata.normalize_metadata(data)
-    storage = {a: e for a, e in storage.items() if redvypr_items.parse_item_address(a)}
+    storage = {a: e for a, (_k, e) in library_entries(storage).items()}
     return tag_storage(storage, f'library:{os.path.basename(path)}', force=True)
 
 
-def save_item_library(path: str, storage: dict) -> int:
+def save_item_library(path: str, storage: dict, addresses=None) -> int:
     """
-    Writes the item entries of a storage into a library file (storage format,
-    without hostinfo and source), YAML or SQLite by the suffix (see
-    load_item_library(); in an SQLite file only the item addresses are replaced).
-    Returns the number of items.
+    Writes the library entries of a storage (items and calibrations) into a library
+    file (storage format, without hostinfo and source), YAML or SQLite by the suffix
+    (see load_item_library(); in an SQLite file only these addresses are replaced).
+    addresses: only these (e.g. from assign_library_entries()), default all.
+    Returns the number of addresses written.
     """
-    out = {}
-    for addr in sorted(storage):
-        if not redvypr_items.parse_item_address(addr):
+    lib = library_entries(storage)
+    sections = {'item': {}, 'calibration': {}}
+    for addr in sorted(lib):
+        if addresses is not None and addr not in addresses:
             continue
+        kind, src = lib[addr]
         entries = []
-        for e in storage[addr]:
+        for e in src:
             c = {k: v for k, v in (e.get('constraints') or {}).items() if k not in ('hostinfo', 'source')}
-            entries.append({'key': e['key'], 'value': e['value'], 'constraints': c})
+            entries.append({'key': e['key'], 'value': _plain_value(e['value']), 'constraints': _plain_value(c)})
         entries.sort(key=lambda e: (e['key'], str(e['constraints'].get('valid_from'))))
-        out[addr] = entries
+        sections[kind][addr] = entries
+    n = len(sections['item']) + len(sections['calibration'])
     if is_sqlite_library(path):
+        out = dict(sections['item'])
+        out.update(sections['calibration'])
         _write_sqlite_items(path, out)
-        return len(out)
+        return n
+    doc = {}
+    if sections['item'] or not sections['calibration']:
+        doc['items'] = sections['item']
+    if sections['calibration']:
+        doc['calibrations'] = sections['calibration']
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
         f.write('# redvypr item library (design note design_items.rst)\n')
-        yaml.safe_dump({'items': out}, f, sort_keys=False, allow_unicode=True)
+        yaml.safe_dump(doc, f, sort_keys=False, allow_unicode=True)
     os.replace(tmp, path)
-    return len(out)
+    return n

@@ -1546,17 +1546,29 @@ class Redvypr(QtCore.QObject):
 
     def save_item_library(self, path: str | None = None) -> int:
         """
-        Writes all items of the metadata into an item library file (default: the
-        first loaded one). Returns the number of items.
+        Writes the items and calibrations belonging to a library file (default: the
+        first loaded one): those loaded from it and the new ones assigned to it
+        (redvypr.metadata_sources.assign_library_entries()). A file not loaded yet
+        ("save as") gets the new ones and is added to the libraries.
+        Returns the number of addresses written.
         """
         if path is None:
             if not self.item_libraries:
                 raise ValueError('no item library loaded, give a file name')
             path = self.item_libraries[0]
-        n = redvypr_metadata_sources.save_item_library(path, self._copy_metadata())
+        storage = self._copy_metadata()
+        libraries = list(self.item_libraries)
+        if path not in libraries:
+            libraries.insert(0, path)      # save as: the new entries go here
+        assigned = redvypr_metadata_sources.assign_library_entries(storage, libraries)
+        n = redvypr_metadata_sources.save_item_library(path, storage, addresses=set(assigned.get(path, [])))
         if path not in self.item_libraries:
             self.item_libraries.append(path)
         return n
+
+    def save_item_libraries(self) -> dict:
+        """Saves every loaded library file (save_item_library()); {path: number of addresses}."""
+        return {path: self.save_item_library(path) for path in list(self.item_libraries)}
 
     def _reader_metadata_sources(self):
         """Further metadata of the database readers: this instance with its item libraries."""

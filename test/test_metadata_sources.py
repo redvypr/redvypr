@@ -177,3 +177,53 @@ def test_sqlite_item_library(tmp_path):
     import pytest
     with pytest.raises(FileNotFoundError):
         ms.load_item_library(str(tmp_path / 'none.sqlite'))
+
+
+def test_several_libraries_with_calibrations(tmp_path):
+    # inventory_norlog.yaml (items) and calibrations.yaml (calibrations): each address is saved
+    # back into the file it came from, new ones into the first file of their kind
+    import datetime
+    import math
+    import redvypr
+    from redvypr.devices.sensors.calibration import item_calibration as ic
+    from redvypr.devices.sensors.calibration.calibration_models import CalibrationNTC
+
+    def ntc(sn):
+        return CalibrationNTC(sn=sn, date=datetime.datetime(2026, 10, 1, tzinfo=datetime.timezone.utc),
+                              coeff=[1 / 3950.0, 1 / 298.15 - math.log(10000.0) / 3950.0])
+
+    inv = str(tmp_path / 'inventory_norlog.yaml')
+    cals = str(tmp_path / 'calibrations.yaml')
+    s = {}
+    items.add_item(s, items.Item(itemtype='breakout_v01', id='BO-003', mpn='X'), valid_from=T0)
+    ms.save_item_library(inv, s)
+    c1 = ntc('NTC-1')
+    a1 = c1.create_redvypr_address().to_address_string()
+    s = {}
+    md.add_metadata_to_entries(md.create_metadata_dict(a1, {'calibration': c1.model_dump()}, valid_from=T0), s)
+    assert ms.save_item_library(cals, s) == 1
+    text = open(cals, encoding='utf-8').read()
+    assert 'calibrations:' in text and 'items:' not in text
+
+    r = redvypr.Redvypr(hostname='multilib')
+    r.load_item_library(inv)
+    r.load_item_library(cals)
+    assert [c.sn for c in ic.calibrations_from_metadata(r._copy_metadata())] == ['NTC-1']
+    # new item and new calibration in the instance
+    r.add_item(items.Item(itemtype='ntc_sensor', id='NTC-2', slot='ntc0'), valid_from=T1)
+    c2 = ntc('NTC-2')
+    a2 = c2.create_redvypr_address().to_address_string()
+    r.set_metadata_from_dict({a2: {'calibration': c2.model_dump(mode='json')}})
+    r.add_item(items.Item(itemtype='breakout_v01', id='BO-003', mpn='X', batch='B'), valid_from=T1)
+    saved = r.save_item_libraries()
+    assert saved == {inv: 2, cals: 2}
+    lib_inv = ms.load_item_library(inv)
+    lib_cal = ms.load_item_library(cals)
+    assert sorted(lib_inv) == sorted([BO, items.item_address('ntc_sensor', 'NTC-2')])
+    assert items.get_item(lib_inv, 'breakout_v01/BO-003', at_time=T2).batch == 'B'
+    assert sorted(lib_cal) == sorted([a1, a2])
+    assert sorted(c.sn for c in ic.calibrations_from_metadata(lib_cal)) == ['NTC-1', 'NTC-2']
+    # save as: a new file gets only what belongs to no file
+    other = str(tmp_path / 'other.yaml')
+    assert r.save_item_library(other) == 0
+    assert r.item_libraries == [inv, cals, other]

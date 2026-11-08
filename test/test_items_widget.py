@@ -116,3 +116,12 @@ def test_type_filter_and_library(widget, tmp_path):
     assert '3 items loaded' in w2.status.text()
     assert [ref for _d, ref in tree_refs(w2)] == ['norlog_v02/N-012', 'breakout_v01/BO-003', 'ntc_sensor/0042']
     w2.close()
+
+
+def test_save_libraries_button(widget, tmp_path):
+    w = widget
+    path = str(tmp_path / 'inventory_norlog.yaml')
+    w.save_library(path)
+    assert w.redvypr.item_libraries == [path]
+    w.save_libraries()
+    assert 'inventory_norlog.yaml (3)' in w.status.text()

@@ -373,6 +373,15 @@ Storage and exchange
   the table ``redvypr_metadata`` (the format of the databases written by
   redvypr, so a database reader sees them too); saving replaces only the
   item addresses, other metadata and tables of the file stay.
+* **Several library files** can be loaded at once, e.g. a git repository
+  ``inventory_redvypr`` with ``inventory_norlog.yaml`` (items) and
+  ``calibrations.yaml``. A library holds items and calibrations (the
+  entries with the key ``calibration``, e.g. of the sensor manager; YAML
+  sections ``items`` and ``calibrations``). Every address belongs to the
+  file it was loaded from (source ``library:<file name>``) and is saved
+  back into it; a new one goes into the first file already holding its
+  kind (item or calibration), else into the first file. "Save library
+  as ..." writes a new file with the entries that belong to no file.
 * Removing an item deletes its history; normally an item gets
   ``status: retired`` instead.
 
