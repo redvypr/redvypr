@@ -4,10 +4,12 @@ Design note: items (sensors, boards, parts) in the metadata
 ===========================================================
 
 Status 2026-11-08, not implemented yet. Goal: information about physical
-things (a sensor, an add-on board, a cable, a part on a board) is kept in the
-redvypr metadata, with history, and data streams refer to the things they were
-measured with. Generic for all redvypr devices; the norlog ADC is the first
-user (NTC calibration with the measured reference resistor of an add-on board).
+things (a logger, an add-on board, a sensor, a cable, a housing) is kept in
+the redvypr metadata, with history. The state of a measurement setup at any
+time (which sensor was on which channel) is derived from these metadata, not
+stored a second time. Generic for all redvypr devices; the norlog ADC is the
+first user (NTC calibration with the measured reference resistor of an add-on
+board).
 
 
 Existing pieces
@@ -29,42 +31,32 @@ Existing pieces
   ``calibration_uuids``) and calibrations, stored as one metadata key
   (``sensor`` or ``calibration``) holding the whole model, at addresses like
   ``@i:sensor and sn=='...' and sensortype=='...'``.
+* **norlog setup profiles** (``devices/norlog/adc_setups.py``): templates of
+  an ADC sequence with channel calibration presets, defined in code; the
+  device reports the name of its profile (``setup``).
 * **Widgets**: ``RedvyprMetadataTable`` (generic table of metadata entries)
   and ``pydantic_config_widget`` (forms generated from pydantic models).
-
-
-Three kinds of information
---------------------------
-
-============  ==================================================  ======================
-Kind          Example                                             Changes
-============  ==================================================  ======================
-Item          breakout BO-003: R1 measured 10002.7 Ohm, MPN,      rarely; history kept
-              batch, order; NTC 0042: type, batch
-Assignment    norlog X, channel ``adc_brd.ntc0``: board BO-003,   on every rebuild
-              sensor ntc/0042, from 2026-11-10
-Calibration   NTC 0042: Steinhart-Hart coefficients (R -> T)      after a calibration
-============  ==================================================  ======================
-
-All three are metadata; they are tied together by item references.
 
 
 Items
 -----
 
+An item is a thing information is kept about. Its properties are the
+metadata entries at its address, every field with its own validity period.
+
 Address
 ~~~~~~~
 
-An item is addressed with the standard source entries, marked as item by
-the packetid::
+::
 
-    @i:'item' and d:'<itemtype>' and si:'<serial number>'
+    @i:'item' and d:'<itemtype>' and si:'<id>'
 
 e.g. ``@i:'item' and d:'breakout_v01' and si:'BO-003'``. ``i:'item'`` keeps
 items apart from data sources (a device called like an item type gets no item
 metadata) and allows to list all items with the query ``@i:'item'``. The
-item reference used elsewhere is the short form ``<itemtype>/<sn>``
-(``breakout_v01/BO-003``).
+item reference used elsewhere is the short form ``<itemtype>/<id>``
+(``breakout_v01/BO-003``). The id is the serial number of a physical item or
+the name of a template (see setup profiles).
 
 One key per field
 ~~~~~~~~~~~~~~~~~
@@ -77,51 +69,103 @@ into its model.
 
 Values with a unit are stored as a small quantity dictionary::
 
-    R1: {value: 10002.7, unit: Ohm, uncertainty: 0.5, method: "4-wire, Keithley 2000", date: 2026-11-10}
+    R1: {value: 10002.7, unit: Ohm, uncertainty: 0.5, method: "4-wire", date: 2026-11-10}
 
 Item types
 ~~~~~~~~~~
 
 An item type is a pydantic model with ``model_config = ConfigDict(extra='allow')``:
 
-* ``Item`` (generic): ``itemtype``, ``sn``, ``name``, ``description``,
+* ``Item`` (generic): ``itemtype``, ``id``, ``name``, ``description``,
   ``manufacturer``, ``mpn``, ``batch``, ``order`` (supplier, number, date),
-  ``parent`` (item reference, e.g. the board a part sits on), ``attachments``,
-  ``comment``. Works for any device without code; unknown fields are kept.
+  ``parent``, ``slot``, ``status``, ``attachments``, ``comment``. Works for
+  any device without code; unknown fields are kept.
 * Specific types derive from ``Item`` and add fields with validation, e.g.
-  ``breakout_v01`` with ``R1`` (quantity) and its channels, ``ntc_sensor``
-  with ``r25``, ``beta``, ``dissipation_constant``.
+  ``norlog_v02`` with ``hwid``, ``breakout_v01`` with ``R1`` (quantity),
+  ``ntc_sensor`` with ``r25``, ``beta``, ``dissipation_constant``.
 
 Types register in a registry (like ``SensorFactory``); devices bring their own
-types (the norlog module brings ``breakout_v01``). The GUI uses the specific
-model if the type is known, otherwise ``Item``.
+types (the norlog module brings ``norlog_v02``, ``breakout_v01``, ``setup``).
+The GUI uses the specific model if the type is known, otherwise ``Item``.
 
 
-Assignments
------------
+The tree: parent and slot
+-------------------------
 
-A data address refers to items with the key ``items``, a dictionary role ->
-item reference::
+Every item says itself where it sits:
 
-    "ntc0 @ i:'adc_brd' and di:'<hwid>'":
-        items: {sensor: ntc_sensor/0042, board: breakout_v01/BO-003}
+* ``parent``: item reference of the item it is mounted on or connected to,
+* ``slot``: where on the parent (free string).
 
-valid from the time of the rebuild, open end. Roles are free strings; usual
-ones are ``sensor``, ``board``, ``cable``. An address without datakey assigns
-items to all datakeys of a source (``@di:'<hwid>'``: the norlog is in housing
-H-07). Items may refer to items with ``parent``.
+Children are not stored in the parent; they are found with the query "all
+items with ``parent`` = X". A rebuild is one new ``parent``/``slot`` entry at
+the moved item; the old entry ends, so the history shows where the item was
+when. Example::
 
-Resolution
-~~~~~~~~~~
+    norlog_v02/N-012          hwid: 0xA1B2...
+     +- breakout_v01/BO-003   parent: norlog_v02/N-012   R1: 10002.7 Ohm
+         +- ntc_sensor/0042   parent: breakout_v01/BO-003, slot: ntc0
+         +- hf_sensor/HF-17   parent: breakout_v01/BO-003, slot: hf0
 
-A new function resolves the items of a data address at a time::
+The slot is free: the channel name (``ntc0``) is the simplest case and needs
+nothing else. Who wants the terminals uses them (``J2.3-4``) and a setup
+profile that translates them into channels (below).
+
+Connection to the data source
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The root of a tree is the item of the device that sends the data. It names
+the data source with a field that matches the standard address entries of its
+packets: ``hwid`` for a norlog (``di`` of its packets), generally
+``deviceid`` or ``sensorid``. Thus redvypr finds the tree of
+``ntc0 @ i:'adc_brd' and di:'0xA1B2...'``.
+
+
+Setup profiles as items
+-----------------------
+
+A setup profile is an item of type ``setup`` with its name as id. It is a
+template, not a physical thing, and optional::
+
+    setup/hf_ntc_v01
+        board_type: breakout_v01
+        sequence: "on=1,sps=5,filter=sinc3,...;hf0,0,1,128,..."
+        channels:
+          ntc0: {slot: J2.3-4, cal: ntc, unit: degC, scale: 10000}
+          hf0:  {slot: J2.1-2, cal: poly, unit: W/m2}
+
+The device reports the name of its profile (norlog: ``setup`` in
+``extinfo`` and in the configuration packet 50010, with history on the SD
+card); redvypr looks up the item ``setup/<name>``. The profiles of
+``adc_setups.py`` become items of a library file; new profiles can then be
+made and shared without a change of the code. The ADC tab keeps "Load
+profile", now from the items.
+
+
+Resolving a channel
+-------------------
+
+The items of a datastream at time t, e.g. ``ntc0`` of norlog 0xA1B2...:
+
+1. the device item whose ``hwid``/``deviceid``/``sensorid`` matches the
+   source of the address, valid at t;
+2. its children and their children (``parent``), valid at t;
+3. the item whose ``slot`` equals the datakey (``ntc0``) is the sensor of the
+   channel; its parent is the board;
+4. if none: the setup profile of the device at t translates the slot of the
+   items (``J2.3-4``) into the channel;
+5. exception: a key ``items`` (role -> item reference) at the data address
+   itself overrides the tree. For devices without a tree, e.g. a serial device
+   with one sensor (``temp@d:'ctd_01'``: ``items: {sensor: sbe3/1234}``).
+
+A new function returns the result::
 
     redvypr.metadata.get_items(storage, address, at_time) -> {role: item model}
 
-It reads ``items`` of the address (merged, at ``at_time``) and the metadata of
-each referenced item at the same time. ``Redvypr`` and ``DbReader`` get a
-method of the same name, so live data and stored data are resolved the same
-way.
+with the roles ``device``, ``board``, ``sensor`` (and further parents).
+``Redvypr`` and ``DbReader`` get a method of the same name, so live data and
+stored data are resolved the same way. Nothing of this is stored a second
+time; the state at any time follows from the history of the entries.
 
 
 Calibrations with item parameters
@@ -132,14 +176,13 @@ A calibration may take a parameter from an item instead of a fixed number::
     calibration ntc, sn 0042: coeffs [...], scale: {item: board, key: R1}
 
 When the calibration is applied to ``adc_brd.ntc0`` at time t, ``scale`` is
-taken from the item in role ``board`` of that address at time t. The sensor
-calibration (R -> T) stays with the sensor; the board parameter
-(x -> R) with the board. Moving the sensor to another board needs a new
-assignment, not a new calibration; data before the move are still evaluated
-with the old board.
+taken from the board of that channel at time t. The sensor calibration
+(R -> T) stays with the sensor; the board parameter (x -> R) with the board.
+Moving the sensor to another board is a new ``parent``, not a new
+calibration; data before the move are still evaluated with the old board.
 
 Calibrations stay where they are (sensor manager, files); they are found by
-the ``sn`` of the item in role ``sensor``.
+the id of the sensor item.
 
 
 Storage and exchange
@@ -159,44 +202,55 @@ Storage and exchange
 GUI
 ---
 
-* **Items** (in the redvypr main window, next to the metadata table): list of
-  all items (type, sn, name, status), filter by type, form of the selected
-  item from its model (``pydantic_config_widget``), history per field
-  (``mode='all'``), "new value from date", attachments, new item from a type
-  or as copy, import/export of the library file.
-* **Assign items** (context menu of a datastream in the address widget):
-  roles and items of the address, from date. Devices can show the same dialog
-  where it fits, e.g. the norlog ADC tab per channel.
+* **Items** (in the redvypr main window, next to the metadata table): tree of
+  the items by ``parent`` (with a time slider or date to see an earlier
+  state), list and filter by type, form of the selected item from its model
+  (``pydantic_config_widget``), history per field (``mode='all'``), "new
+  value from date", "move to" (new parent/slot from date), attachments, new
+  item from a type or as copy, import/export of the library file.
+* **Datastream**: context menu of a datastream in the address widget shows
+  the resolved items and allows the exception ``items``.
+* **norlog ADC tab**: per channel the resolved sensor and board; profile
+  selection from the ``setup`` items.
 * **Calibration**: shows the items and the parameters used for a channel.
 
 
-Migration of the sensor manager
--------------------------------
+Migration
+---------
 
-``BaseSensor`` becomes an item type (``sensortype`` = ``itemtype``), its
-address changes to the item address, one key per field. Reading the old
-addresses (``@i:sensor and sn==...``, one key ``sensor``) stays possible and
-converts them. To be decided with the author of the sensor manager.
+* ``BaseSensor`` of the sensor manager becomes an item type
+  (``sensortype`` = ``itemtype``), its address changes to the item address,
+  one key per field. Reading the old addresses (``@i:sensor and sn==...``,
+  one key ``sensor``) stays possible and converts them. To be decided with
+  the author of the sensor manager.
+* norlog: the profiles of ``adc_setups.py`` become ``setup`` items in a
+  library file shipped with redvypr; the code keeps them as fallback until
+  then.
 
 
 Steps
 -----
 
-1. ``Item`` model, registry, item address and functions to write/read items
-   (one key per field), ``get_items()``; tests.
-2. Items widget with form, history and library file.
-3. Assignment dialog in the address widget; ``items`` key.
-4. Calibration parameter from an item (``scale`` of the NTC calibration);
-   norlog: ``breakout_v01`` type, assignment in the ADC tab.
+1. ``Item`` model, registry, item address, writing/reading items (one key per
+   field), ``parent``/``slot``, ``get_items()`` with the tree and the
+   exception ``items``; tests.
+2. Items widget: tree, form, history, move, library file.
+3. Calibration parameter from an item (``scale`` of the NTC calibration);
+   norlog item types (``norlog_v02`` with ``hwid``, ``breakout_v01``),
+   resolved items in the ADC tab.
+4. Setup profiles as ``setup`` items, translation of terminal slots.
 5. Migration of ``BaseSensor``.
 
 
 Open points
 -----------
 
-* Serial numbers: unique per item type (``si`` together with ``d``), or
-  globally unique (e.g. inventory numbers)?
-* Should an assignment also be stored in the device (norlog: board serial
-  number next to ``setup``), so that it is known without a PC?
+* Ids: unique per item type (``si`` together with ``d``), or globally
+  unique (e.g. inventory numbers)?
+* Should the device store the id of its add-on board (norlog: next to
+  ``setup``), so that the tree is known without a PC, or detect it (hardware
+  id divider of the next breakout)?
 * Several redvypr instances changing the same item: the merge rules keep both
   values with their times; the later ``valid_from`` wins.
+* Slot names: free strings; conventions per device type (channel names or
+  connector pins) are documented with the item types.
