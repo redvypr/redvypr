@@ -110,3 +110,48 @@ def test_definition_history_now_wins():
 def test_invalid_kind_is_rejected():
     with pytest.raises(ValueError):
         it.TypeDefinition(name='x', fields={'a': {'kind': 'complex'}})
+
+
+def test_lookup_of_unknown_types_in_the_library_directory(tmp_path):
+    # only the items are loaded; the definitions are found in the same directory (and subdirectories)
+    import os
+    import time
+    import redvypr
+    sub = tmp_path / 'types' / 'calypso'
+    sub.mkdir(parents=True)
+    with open(sub / 'CMI1018.yaml', 'w', encoding='utf-8') as f:
+        yaml.safe_dump({'item_types': {'calypso_CMI1018': CALYPSO,
+                                       'unused_type': {'description': 'not needed'}}}, f)
+    s = {}
+    items.add_item(s, items.Item(itemtype='calypso_CMI1018', id='0011', heading_offset=4.0), valid_from=T0)
+    items.add_item(s, items.Item(itemtype='gadget_without_definition', id='G1'), valid_from=T0)
+    inv = str(tmp_path / 'inventory.yaml')
+    ms.save_item_library(inv, s)
+    assert 'calypso_CMI1018' not in items.ITEM_TYPES
+    lib = ms.load_item_library(inv)
+    assert items.get_item_type('calypso_CMI1018').ORIGIN == 'data'
+    assert 'unused_type' not in items.ITEM_TYPES              # only what is needed
+    assert 'gadget_without_definition' not in items.ITEM_TYPES
+    w = items.get_item(lib, 'calypso_CMI1018/0011', at_time=T1)
+    assert w.heading_offset.unit == 'deg' and w.mpn == 'CMI1018'
+    assert all(it.parse_itemtype_address(a) is None for a in lib)
+
+    # a redvypr instance: item_type_paths elsewhere, resolved again after a change of the file
+    items.ITEM_TYPES.pop('calypso_CMI1018')
+    other = tmp_path / 'elsewhere'
+    other.mkdir()
+    os.replace(sub / 'CMI1018.yaml', other / 'CMI1018.yaml')
+    r = redvypr.Redvypr(hostname='typelookup')
+    r.item_type_paths = [str(other)]
+    r.load_item_library(inv)
+    assert items.get_item_type('calypso_CMI1018').ORIGIN == 'data'
+    assert r.get_config().item_type_paths == [str(other)]
+    # changed definition: read again on the next resolution
+    items.ITEM_TYPES.pop('calypso_CMI1018')
+    time.sleep(0.01)
+    changed = dict(CALYPSO, description='changed')
+    with open(other / 'CMI1018.yaml', 'w', encoding='utf-8') as f:
+        yaml.safe_dump({'item_types': {'calypso_CMI1018': changed}}, f)
+    os.utime(other / 'CMI1018.yaml', (time.time() + 5, time.time() + 5))
+    assert 'calypso_CMI1018' in r.resolve_item_types()
+    assert items.get_item_type('calypso_CMI1018').DEFINITION.description == 'changed'

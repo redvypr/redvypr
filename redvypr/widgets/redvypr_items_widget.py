@@ -301,9 +301,13 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
     # --- tree ---
     def refresh(self):
         at = self.time()
-        # item types defined as data in the metadata of the instance
+        # item types defined as data in the metadata of the instance, definitions of unknown
+        # types searched in the type directories
         try:
-            ritem_types.register_from_storage(self.redvypr._copy_metadata())
+            if hasattr(self.redvypr, 'resolve_item_types'):
+                self.redvypr.resolve_item_types()
+            else:
+                ritem_types.register_from_storage(self.redvypr._copy_metadata())
         except Exception:
             logger.warning('could not register the item types of the metadata', exc_info=True)
         all_items = self.redvypr.list_items(at_time=at)

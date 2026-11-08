@@ -388,7 +388,7 @@ def _write_sqlite_items(path: str, out: dict):
         con.close()
 
 
-def load_item_library(path: str) -> dict:
+def load_item_library(path: str, type_paths=None) -> dict:
     """
     Storage of an item library file, entries tagged 'library:<file name>'. Only
     item addresses are taken. YAML (storage format {address: [entries]} or simple
@@ -413,9 +413,11 @@ def load_item_library(path: str) -> dict:
             data = joined
     storage = redvypr_metadata.normalize_metadata(data)
     storage = {a: e for a, (_k, e) in library_entries(storage).items()}
-    # item types defined in the file: usable right away
+    # item types defined in the file: usable right away; types of its items not known yet
+    # are searched in the directory of the file and in type_paths
     import redvypr.item_types as ritem_types
     ritem_types.register_from_storage(storage)
+    ritem_types.resolve_types(storage, [os.path.dirname(os.path.abspath(path))] + list(type_paths or []))
     return tag_storage(storage, f'library:{os.path.basename(path)}', force=True)
 
 

@@ -105,6 +105,9 @@ class RedvyprConfig(pydantic.BaseModel):
                                                                 'data from (e.g. by the XY plot), used by their name')
     item_libraries: typing.List[str] = pydantic.Field(default=[], description='Item library files (YAML), '
                                                       'loaded into the metadata at the start (redvypr.items)')
+    item_type_paths: typing.List[str] = pydantic.Field(
+        default=[], description='Directories (or files) searched for definitions of item types not known '
+                                '(redvypr.item_types), besides the directories of the item libraries')
 
 
 
@@ -522,6 +525,7 @@ class Redvypr(QtCore.QObject):
                                                       on_change=self.datasources_changed_signal.emit,
                                                       metadata_sources=self._reader_metadata_sources)
         self.item_libraries = []        # item library files (redvypr.metadata_sources)
+        self.item_type_paths = list(getattr(config, 'item_type_paths', None) or [])  # see redvypr.item_types
         self.properties = {}  # Properties that are distributed with the device
         self.numdevice = 0
         self.devices = []  # List containing dictionaries with information about all attached devices
@@ -551,7 +555,7 @@ class Redvypr(QtCore.QObject):
         # Item library files: into the metadata, entries tagged 'library:<file>'
         for path in config.item_libraries or []:
             try:
-                storage = redvypr_metadata_sources.load_item_library(path)
+                storage = redvypr_metadata_sources.load_item_library(path, type_paths=self.item_type_paths)
                 redvypr.metadata.do_metadata({'_metadata': storage}, self.deviceinfo_all,
                                              auto_add_packetfilter=False)
                 self.item_libraries.append(path)
@@ -665,7 +669,8 @@ class Redvypr(QtCore.QObject):
                                devicepaths=self.device_paths, loglevel=loglevel_tmp,
                                redvyp_version=version, date_created=str(datetime.datetime.utcnow()),
                                devices=devices, datasources=[d.model_copy() for d in self.datasources],
-                               item_libraries=list(self.item_libraries))
+                               item_libraries=list(self.item_libraries),
+                               item_type_paths=list(self.item_type_paths))
 
         return config
 
@@ -1552,7 +1557,7 @@ class Redvypr(QtCore.QObject):
         source 'library:<file name>'. Loading the same file again adds nothing.
         Returns the number of items in the file.
         """
-        storage = redvypr_metadata_sources.load_item_library(path)
+        storage = redvypr_metadata_sources.load_item_library(path, type_paths=self.item_type_paths)
         datapacket = redvypr.data_packets.commandpacket(command='reply')
         datapacket['_metadata'] = storage
         self.redvyprqueue.put(datapacket)
@@ -1582,6 +1587,26 @@ class Redvypr(QtCore.QObject):
         if path not in self.item_libraries:
             self.item_libraries.append(path)
         return n
+
+    def item_type_search_paths(self) -> list:
+        """Where definitions of unknown item types are searched: item_type_paths, then the library directories."""
+        paths = list(self.item_type_paths)
+        for lib in self.item_libraries:
+            d = os.path.dirname(os.path.abspath(lib))
+            if d not in paths:
+                paths.append(d)
+        return paths
+
+    def resolve_item_types(self) -> list:
+        """
+        Registers the item types defined in the metadata and searches the definitions of
+        the types of the items not known yet (redvypr.item_types.resolve_types()).
+        Returns the names registered.
+        """
+        import redvypr.item_types as ritem_types
+        storage = self._copy_metadata()
+        names = ritem_types.register_from_storage(storage)
+        return names + ritem_types.resolve_types(storage, self.item_type_search_paths())
 
     def save_item_libraries(self) -> dict:
         """Saves every loaded library file (save_item_library()); {path: number of addresses}."""

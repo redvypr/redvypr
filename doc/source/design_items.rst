@@ -137,6 +137,19 @@ definition valid now is used (its history is kept); ``renamed`` gives the
 migration of items of older revisions; an item that does not validate is
 shown as generic ``Item`` with a warning in the log.
 
+**Lookup of unknown types:** only the items need to be loaded. If items of a
+type are loaded whose definition is not known, redvypr searches it in the
+directory of the item library file and in the configured
+``item_type_paths`` (directories or files, searched with their
+subdirectories): every YAML file with a section ``item_types``. A file is
+read once and again only after a change; only the definitions needed (and
+their bases) are registered and they are not put into the metadata (not
+written back). This is also done when the Items window is refreshed
+(``Redvypr.resolve_item_types()``). It allows a type catalogue as a
+directory tree, one file per model (e.g. ``types/calypso/CMI1018.yaml``),
+growing to many types; later possibly a repository of its own shared by
+several inventories, type names unique by ``<manufacturer>_<model>``.
+
 Revisions of item types
 ~~~~~~~~~~~~~~~~~~~~~~~
 

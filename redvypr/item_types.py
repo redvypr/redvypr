@@ -27,13 +27,23 @@ with history). redvypr builds a pydantic model from every definition
 * the definition valid now is used (types have no time dependence of their own;
   their history is kept);
 * ``renamed`` ({old: new}) gives the migration of items of an older revision.
+
+Lookup: if items of a type are loaded whose definition is not known, the
+definition is searched in type directories (:func:`resolve_types`): every
+YAML file with a section ``item_types`` in these directories and their
+subdirectories (e.g. the directory of the loaded item library and the
+configured ``item_type_paths``). Files are read once and again only after a
+change. Only the definitions needed (and their bases) are registered; they
+are not put into the metadata, so they are not written back.
 """
 
 import datetime
 import logging
+import os
 import typing
 
 import pydantic
+import yaml
 
 import redvypr.metadata as redvypr_metadata
 from redvypr.redvypr_address import RedvyprAddress
@@ -329,6 +339,101 @@ def register_from_storage(storage: dict, at_time=None) -> typing.List[str]:
     """Registers the type definitions of a storage (see register_definitions())."""
     defs = definitions_from_storage(storage, at_time=at_time)
     return register_definitions(defs) if defs else []
+
+
+# --- lookup in type directories ---------------------------------------------------------
+
+_FILE_CACHE: typing.Dict[str, typing.Tuple[float, typing.Dict[str, TypeDefinition]]] = {}
+TYPE_FILE_SUFFIXES = ('.yaml', '.yml')
+
+
+def type_files(paths) -> typing.List[str]:
+    """YAML files of a list of directories (with subdirectories) and files, sorted, without duplicates."""
+    out = []
+    for p in paths or []:
+        if not p:
+            continue
+        p = os.path.abspath(str(p))
+        if os.path.isfile(p):
+            out.append(p)
+        elif os.path.isdir(p):
+            for dirpath, dirnames, filenames in os.walk(p):
+                dirnames[:] = sorted(d for d in dirnames if not d.startswith('.'))
+                out.extend(os.path.join(dirpath, f) for f in sorted(filenames)
+                           if f.lower().endswith(TYPE_FILE_SUFFIXES))
+    seen = set()
+    return [f for f in out if not (f in seen or seen.add(f))]
+
+
+def definitions_in_file(path: str) -> typing.Dict[str, TypeDefinition]:
+    """The type definitions of a YAML file (section item_types), cached until the file changes."""
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return {}
+    cached = _FILE_CACHE.get(path)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+    defs = {}
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        if 'item_types' in text:
+            data = yaml.safe_load(text)
+            section = data.get('item_types') if isinstance(data, dict) else None
+            if isinstance(section, dict) and section:
+                storage = redvypr_metadata.normalize_metadata(short_form_to_storage(section))
+                defs = definitions_from_storage(storage)
+    except Exception:
+        logger.warning(f'could not read item types from {path}', exc_info=True)
+    _FILE_CACHE[path] = (mtime, defs)
+    return defs
+
+
+def find_definitions(names, paths) -> typing.Dict[str, TypeDefinition]:
+    """
+    Definitions of the types names (and of their bases not known yet) in the type
+    directories/files paths; the first file (in the order of paths) wins.
+    """
+    wanted = set(n for n in names if n)
+    found = {}
+    files = type_files(paths)
+    for _depth in range(ritems.MAX_TREE_DEPTH):
+        missing = wanted - set(found)
+        if not missing:
+            break
+        for path in files:
+            for name, defn in definitions_in_file(path).items():
+                if name in missing and name not in found:
+                    found[name] = defn
+        bases = {d.base for d in found.values()
+                 if d.base and d.base not in found and d.base not in ritems.ITEM_TYPES}
+        if not bases - wanted:
+            break
+        wanted |= bases
+    return found
+
+
+def used_types(storage: dict) -> typing.Set[str]:
+    """Item types used by the items of a storage."""
+    return {t for (t, i) in ritems.item_keys(storage) if t and i}
+
+
+def resolve_types(storage: dict, paths) -> typing.List[str]:
+    """
+    Registers the definitions of the item types used in a storage that are not
+    defined as data yet (unknown types, and Python types a definition may extend),
+    searched in paths (see find_definitions()). Returns the names registered.
+    """
+    needed = [t for t in used_types(storage) if type_origin(t) != 'data']
+    if not needed or not paths:
+        return []
+    defs = find_definitions(needed, paths)
+    registered = register_definitions(defs) if defs else []
+    unknown = sorted(t for t in needed if t not in ritems.ITEM_TYPES)
+    if unknown:
+        logger.info(f'no definition found for the item types {unknown} (generic Item)')
+    return registered
 
 
 def type_origin(name: str) -> str:
