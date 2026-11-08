@@ -9,7 +9,7 @@ redvypr changelog
 ### Added
 - Items in the metadata (design note doc/source/design_items.rst, step 1): new module
   `redvypr.items` for physical things (loggers, boards, sensors, ...) and templates. An item lives
-  at `@i:'item' and d:'<itemtype>' and si:'<id>'`, one metadata key per field with its own validity
+  at `@i:'item' and d:'<itemtype>' and di:'<id>'`, one metadata key per field with its own validity
   period; pydantic item types with registry, type revision and migration; tree by `parent`/`slot`;
   `get_items(address, at_time)` finds the device, board and sensor of a datastream (or uses a key
   `items` at the data address). Methods `Redvypr.add_item()`, `get_item()`, `list_items()`,

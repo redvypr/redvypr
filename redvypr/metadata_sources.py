@@ -398,6 +398,11 @@ def load_item_library(path: str) -> dict:
             data = joined
     storage = redvypr_metadata.normalize_metadata(data)
     storage = {a: e for a, (_k, e) in library_entries(storage).items()}
+    # older item addresses (id in 'si') in the current form (id in 'di')
+    converted = {}
+    for a, e in storage.items():
+        converted.setdefault(redvypr_items.canonical_item_address(a), []).extend(e)
+    storage = converted
     return tag_storage(storage, f'library:{os.path.basename(path)}', force=True)
 
 

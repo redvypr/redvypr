@@ -3,7 +3,7 @@ Items: physical things (a logger, an add-on board, a sensor, a cable) and
 templates (setup profiles) kept in the redvypr metadata.
 
 Design: doc/source/design_items.rst. An item lives at the metadata address
-``@i:'item' and d:'<itemtype>' and si:'<id>'``; every field is its own
+``@i:'item' and d:'<itemtype>' and di:'<id>'``; every field is its own
 metadata key with its own validity period. Items form a tree: every item
 names its ``parent`` (item reference ``<itemtype>/<id>``) and its ``slot``
 on the parent. The root item names its data source (``deviceid``,
@@ -199,21 +199,46 @@ def item_address(itemtype: str, item_id: str) -> str:
     """Metadata address of an item."""
     _check_name('itemtype', itemtype)
     _check_name('id', item_id)
-    raddr = RedvyprAddress('@', packetid=ITEM_PACKETID, device=itemtype, sensorid=item_id)
+    raddr = RedvyprAddress('@', packetid=ITEM_PACKETID, device=itemtype, deviceid=item_id)
     return raddr.to_address_string()
 
 
+def _item_id_of(raddr) -> typing.Tuple[typing.Optional[str], bool]:
+    """
+    (id, legacy) of a parsed item address: the id is in 'di'; the form of older versions
+    with the id in 'si' is still read (legacy True). (None, False) without an id;
+    ('', False) if the address is no item address (both set or a sensor name).
+    """
+    if raddr.sensor is not None:
+        return '', False
+    did, sid = raddr.deviceid or None, raddr.sensorid or None
+    if did and sid:
+        return '', False
+    if sid:
+        return sid, True
+    return did, False
+
+
 def parse_item_address(address) -> typing.Optional[typing.Tuple[str, str]]:
-    """(itemtype, id) if address is the address of an item, else None."""
+    """(itemtype, id) if address is the address of an item (also the older form with 'si'), else None."""
     try:
         raddr = address if isinstance(address, RedvyprAddress) else RedvyprAddress(address)
-        if raddr.packetid != ITEM_PACKETID or not raddr.device or not raddr.sensorid:
+        if raddr.packetid != ITEM_PACKETID or not raddr.device:
             return None
         if raddr.get_datakeyentries():
             return None
-        return raddr.device, raddr.sensorid
+        item_id, _legacy = _item_id_of(raddr)
+        if not item_id:
+            return None
+        return raddr.device, item_id
     except Exception:
         return None
+
+
+def canonical_item_address(address: str) -> str:
+    """The current form of an item address (id in 'di'); other addresses unchanged."""
+    parsed = parse_item_address(address)
+    return item_address(*parsed) if parsed else address
 
 
 # --- writing ------------------------------------------------------------------------
@@ -284,6 +309,7 @@ def item_keys(storage: dict) -> dict:
     The item addresses of a storage: {(itemtype, id): [address strings]}, with the defaults
     (None, None) for '@i:'item'' (all items) and (itemtype, None) for '@i:'item' and d:'<type>''.
     Other address forms are not item addresses. The parsed addresses are cached, so one pass is cheap.
+    Addresses of the older form (id in 'si') come first, so the current form wins.
     """
     keys = {}
     for astr in list(storage.keys()):
@@ -293,12 +319,11 @@ def item_keys(storage: dict) -> dict:
             continue
         if raddr.packetid != ITEM_PACKETID or raddr.get_datakeyentries():
             continue
-        if raddr.deviceid is not None or raddr.sensor is not None:
+        item_id, legacy = _item_id_of(raddr)
+        if item_id == '' or (item_id and not raddr.device):
             continue
-        if raddr.sensorid and not raddr.device:
-            continue
-        keys.setdefault((raddr.device or None, raddr.sensorid or None), []).append(astr)
-    return keys
+        keys.setdefault((raddr.device or None, item_id), []).append((not legacy, astr))
+    return {k: [a for _cur, a in sorted(v, key=lambda x: x[0])] for k, v in keys.items()}
 
 
 def _fields_at(storage: dict, addresses, at_time) -> dict:

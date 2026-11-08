@@ -6,6 +6,7 @@ import typing
 import pytest
 
 from redvypr import items
+from redvypr import metadata as md
 from redvypr.redvypr_address import RedvyprAddress
 
 T0 = '2026-11-01T00:00:00+00:00'
@@ -266,3 +267,27 @@ def test_get_items_scales():
     dt = time.perf_counter() - t
     assert found['sensor'].ref == 'ntc/N3_3'
     assert dt < 0.5, f'get_items took {dt:.3f} s'
+
+
+def test_item_address_with_deviceid_and_legacy_si(tmp_path):
+    # the id is in 'di'; the older form with 'si' is still read and converted when a library is loaded
+    from redvypr import metadata_sources as ms
+    addr = items.item_address('norlog_v02', '30572ED22A0BE4E8')
+    assert "di:'30572ED22A0BE4E8'" in addr and 'si:' not in addr
+    assert items.parse_item_address(addr) == ('norlog_v02', '30572ED22A0BE4E8')
+    old = "@i:'item' and d:'breakout_v01' and si:'BO-001'"
+    assert items.parse_item_address(old) == ('breakout_v01', 'BO-001')
+    assert items.canonical_item_address(old) == items.item_address('breakout_v01', 'BO-001')
+    assert items.parse_item_address("@i:'item' and d:'x' and di:'a' and si:'b'") is None
+    s = {}
+    md.add_metadata_to_entries(md.create_metadata_dict(old, {'name': 'old', 'mpn': 'M'}, valid_from=T0), s)
+    md.add_metadata_to_entries(md.create_metadata_dict(items.item_address('breakout_v01', 'BO-001'),
+                                                       {'name': 'new'}, valid_from=T0), s)
+    it = items.get_item(s, 'breakout_v01/BO-001', at_time=T1)
+    assert it.name == 'new' and it.mpn == 'M'         # current form wins, older fields still read
+    path = str(tmp_path / 'old.yaml')
+    import yaml
+    with open(path, 'w', encoding='utf-8') as f:
+        yaml.safe_dump({'items': {old: {'name': 'old', 'mpn': 'M'}}}, f)
+    lib = ms.load_item_library(path)
+    assert list(lib) == [items.item_address('breakout_v01', 'BO-001')]

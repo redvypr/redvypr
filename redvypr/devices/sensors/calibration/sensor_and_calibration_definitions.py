@@ -150,7 +150,7 @@ class BaseSensor(redvypr_items.Item):
 
     def create_redvypr_address(self) -> 'RedvyprAddress':
         """
-        The item address (@i:'item' and d:'<sensortype>' and si:'<sn>'); without a serial number
+        The item address (@i:'item' and d:'<sensortype>' and di:'<sn>'); without a serial number
         the address of older versions (key 'sensor' with the whole model).
         """
         if self.sn:
