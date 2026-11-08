@@ -7,6 +7,13 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- Items in the metadata (design note doc/source/design_items.rst, step 1): new module
+  `redvypr.items` for physical things (loggers, boards, sensors, ...) and templates. An item lives
+  at `@i:'item' and d:'<itemtype>' and si:'<id>'`, one metadata key per field with its own validity
+  period; pydantic item types with registry, type revision and migration; tree by `parent`/`slot`;
+  `get_items(address, at_time)` finds the device, board and sensor of a datastream (or uses a key
+  `items` at the data address). Methods `Redvypr.add_item()`, `get_item()`, `list_items()`,
+  `get_items()`, `get_item_history()` and `DbReader.get_items()`. Tests in test_items.py.
 - norlog gateway: setup profiles of the ADC sequence (firmware >= 0.4.51, design note
   doc/design_aufbau_profile.md of the firmware). New module `adc_setups` with the profiles as
   templates (sequence and kind of calibration per channel), first `hf_ntc_v01` for the breakout v01

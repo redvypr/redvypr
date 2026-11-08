@@ -36,6 +36,7 @@ import redvypr.redvypr_address as redvypr_address
 from redvypr.redvypr_address import RedvyprAddress
 import redvypr.packet_statistic as redvypr_packet_statistic
 import redvypr.metadata as redvypr_metadata
+import redvypr.items as redvypr_items
 from redvypr.datasource import DataSourceConfig, DatasourceRegistry
 from redvypr.version import version
 import redvypr.files as files
@@ -1466,6 +1467,47 @@ class Redvypr(QtCore.QObject):
             except RuntimeError:    # changed by the distribution thread while copying
                 time.sleep(0.001)
         return copy.deepcopy(self.get_deviceinfo().get('metadata', {}))
+
+    # --- items (sensors, boards, ... in the metadata, see redvypr.items) ---
+    def add_item(self, item: 'redvypr_items.Item', valid_from=None, fields: dict | None = None) -> bool:
+        """
+        Writes an item (see :mod:`redvypr.items`) into the metadata, valid from
+        valid_from (default now). fields: only these keys, default the whole
+        item (then fields it does not have any more end at valid_from).
+        Returns True if the metadata changed.
+        """
+        if valid_from is None:
+            valid_from = datetime.datetime.now(datetime.timezone.utc)
+        address = item.address
+        entries = copy.deepcopy(self._copy_metadata().get(address, []))
+        work = {address: entries}
+        changed = redvypr_items.add_item(work, item, valid_from=valid_from, hostinfo=self.hostinfo,
+                                         fields=fields)
+        if not changed:
+            return False
+        # replace the entries of the item address in one step (remove, then add)
+        datapacket = redvypr.data_packets.commandpacket(command='reply')
+        datapacket['_metadata_remove'] = {address: {'keys': [], 'mode': 'exact'}}
+        datapacket['_metadata'] = {address: work[address]}
+        self.redvyprqueue.put(datapacket)
+        self.redvyprreplyqueue.get()
+        return True
+
+    def get_item(self, ref: str, at_time=None):
+        """An item ('<itemtype>/<id>') at a time (default now), None if unknown."""
+        return redvypr_items.get_item(self._copy_metadata(), ref, at_time=at_time)
+
+    def list_items(self, itemtype: str | None = None, at_time=None) -> list:
+        """All items existing at a time (default now), optionally of one type."""
+        return redvypr_items.list_items(self._copy_metadata(), itemtype=itemtype, at_time=at_time)
+
+    def get_items(self, address, at_time=None) -> dict:
+        """The items ({role: item}) of a datastream at a time, see redvypr.items.get_items()."""
+        return redvypr_items.get_items(self._copy_metadata(), address, at_time=at_time)
+
+    def get_item_history(self, ref: str) -> list:
+        """All stored entries of an item."""
+        return redvypr_items.get_item_history(self._copy_metadata(), ref)
 
     def set_metadata_from_dict(self, metadata: dict) -> None:
         """

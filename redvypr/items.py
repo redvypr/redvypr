@@ -1,0 +1,419 @@
+"""
+Items: physical things (a logger, an add-on board, a sensor, a cable) and
+templates (setup profiles) kept in the redvypr metadata.
+
+Design: doc/source/design_items.rst. An item lives at the metadata address
+``@i:'item' and d:'<itemtype>' and si:'<id>'``; every field is its own
+metadata key with its own validity period. Items form a tree: every item
+names its ``parent`` (item reference ``<itemtype>/<id>``) and its ``slot``
+on the parent. The root item names its data source (``deviceid``,
+``sensorid`` or ``device``, like the address entries ``di``, ``si``, ``d``),
+so the items of a datastream are found with :func:`get_items`.
+
+The functions work on a metadata storage ``{address: [entries]}`` (the format
+of ``deviceinfo_all['metadata']``, of ``Redvypr._copy_metadata()`` and of
+``DbReader.metadata_storage()``).
+"""
+
+import logging
+import typing
+
+import pydantic
+
+import redvypr.metadata as redvypr_metadata
+from redvypr.redvypr_address import RedvyprAddress
+
+logger = logging.getLogger('redvypr.items')
+
+ITEM_PACKETID = 'item'
+# Fields that are part of the address, not stored as metadata keys
+ADDRESS_FIELDS = ('itemtype', 'id')
+# Fields of an item naming its data source, with the address entry they match
+SOURCE_FIELDS = (('deviceid', 'deviceid'), ('sensorid', 'sensorid'), ('device', 'device'))
+# Maximum depth of the tree (protection against loops in parent references)
+MAX_TREE_DEPTH = 32
+
+
+class ItemError(Exception):
+    pass
+
+
+class Quantity(pydantic.BaseModel):
+    """A value with unit, e.g. a measured resistor: {value: 10002.7, unit: Ohm}."""
+    model_config = pydantic.ConfigDict(extra='allow')
+    value: float
+    unit: str = ''
+    uncertainty: typing.Optional[float] = None
+    method: typing.Optional[str] = None
+    date: typing.Optional[str] = None
+
+
+class Item(pydantic.BaseModel):
+    """
+    Generic item. Specific types derive from it, set ITEMTYPE and REVISION and
+    are registered with :func:`register_item_type`. Unknown fields are kept
+    (extra='allow'), so an item of an unknown type or of a newer revision is
+    not lost.
+    """
+    model_config = pydantic.ConfigDict(extra='allow')
+
+    ITEMTYPE: typing.ClassVar[str] = 'item'
+    # Revision of the type: count up with every change of the fields. A new
+    # optional field needs no migration; renamed fields or changed meanings
+    # are handled in migrate().
+    REVISION: typing.ClassVar[int] = 1
+
+    itemtype: str = pydantic.Field(default='item', description='Type of the item')
+    id: str = pydantic.Field(default='', description='Serial number or name, unique per item type')
+    uuid: typing.Optional[str] = pydantic.Field(default=None, description='Optional globally unique id')
+    type_revision: typing.Optional[int] = pydantic.Field(default=None,
+                                                         description='Revision of the type the item was written with')
+    name: typing.Optional[str] = None
+    description: typing.Optional[str] = None
+    manufacturer: typing.Optional[str] = None
+    mpn: typing.Optional[str] = pydantic.Field(default=None, description='Manufacturer part number')
+    batch: typing.Optional[str] = None
+    hw_revision: typing.Optional[str] = pydantic.Field(default=None, description='Hardware revision of the thing')
+    order: typing.Optional[dict] = pydantic.Field(default=None, description='Supplier, number, date, ...')
+    parent: typing.Optional[str] = pydantic.Field(default=None, description='Item reference <itemtype>/<id>')
+    slot: typing.Optional[str] = pydantic.Field(default=None, description='Where on the parent, e.g. a channel name')
+    deviceid: typing.Optional[str] = pydantic.Field(default=None, description='Data source: deviceid of its packets')
+    sensorid: typing.Optional[str] = pydantic.Field(default=None, description='Data source: sensorid of its packets')
+    device: typing.Optional[str] = pydantic.Field(default=None, description='Data source: device name of its packets')
+    status: typing.Optional[str] = pydantic.Field(default=None, description='e.g. retired')
+    attachments: typing.Optional[list] = None
+    comment: typing.Optional[str] = None
+
+    @pydantic.model_validator(mode='before')
+    @classmethod
+    def _itemtype_of_class(cls, data):
+        """A specific type gets its ITEMTYPE (the generic Item takes the given one)."""
+        if isinstance(data, dict) and cls is not Item:
+            if data.get('itemtype') not in (None, '', cls.ITEMTYPE):
+                raise ValueError(f"itemtype {data.get('itemtype')!r} does not fit {cls.__name__} ({cls.ITEMTYPE})")
+            data = dict(data)
+            data['itemtype'] = cls.ITEMTYPE
+        return data
+
+    @classmethod
+    def migrate(cls, fields: dict, from_revision: int) -> dict:
+        """Convert the stored fields of an older revision of this type (default: unchanged)."""
+        return fields
+
+    @property
+    def ref(self) -> str:
+        return make_ref(self.itemtype, self.id)
+
+    @property
+    def address(self) -> str:
+        return item_address(self.itemtype, self.id)
+
+
+ITEM_TYPES: typing.Dict[str, typing.Type[Item]] = {}
+
+
+def register_item_type(cls: typing.Type[Item]) -> typing.Type[Item]:
+    """Register an item type (usable as decorator); its ITEMTYPE is the name."""
+    if not (isinstance(cls, type) and issubclass(cls, Item)):
+        raise TypeError(f'{cls!r} is not a subclass of Item')
+    ITEM_TYPES[cls.ITEMTYPE] = cls
+    return cls
+
+
+register_item_type(Item)
+
+
+def get_item_type(itemtype: str) -> typing.Type[Item]:
+    """The model of an item type; the generic Item for unknown types."""
+    return ITEM_TYPES.get(itemtype, Item)
+
+
+# --- references and addresses ------------------------------------------------------
+
+def _check_name(what, value):
+    if not isinstance(value, str) or not value or "'" in value or '"' in value:
+        raise ItemError(f'{what} must be a non-empty string without quotes: {value!r}')
+
+
+def make_ref(itemtype: str, item_id: str) -> str:
+    """Item reference '<itemtype>/<id>'."""
+    _check_name('itemtype', itemtype)
+    _check_name('id', item_id)
+    if '/' in itemtype:
+        raise ItemError(f'itemtype must not contain "/": {itemtype!r}')
+    return f'{itemtype}/{item_id}'
+
+
+def parse_ref(ref: str) -> typing.Tuple[str, str]:
+    """(itemtype, id) of an item reference; the id may contain '/'."""
+    if not isinstance(ref, str) or '/' not in ref:
+        raise ItemError(f'item reference must be <itemtype>/<id>: {ref!r}')
+    itemtype, item_id = ref.split('/', 1)
+    _check_name('itemtype', itemtype)
+    _check_name('id', item_id)
+    return itemtype, item_id
+
+
+def item_address(itemtype: str, item_id: str) -> str:
+    """Metadata address of an item."""
+    _check_name('itemtype', itemtype)
+    _check_name('id', item_id)
+    raddr = RedvyprAddress('@', packetid=ITEM_PACKETID, device=itemtype, sensorid=item_id)
+    return raddr.to_address_string()
+
+
+def parse_item_address(address) -> typing.Optional[typing.Tuple[str, str]]:
+    """(itemtype, id) if address is the address of an item, else None."""
+    try:
+        raddr = address if isinstance(address, RedvyprAddress) else RedvyprAddress(address)
+        if raddr.packetid != ITEM_PACKETID or not raddr.device or not raddr.sensorid:
+            return None
+        if raddr.get_datakeyentries():
+            return None
+        return raddr.device, raddr.sensorid
+    except Exception:
+        return None
+
+
+# --- writing ------------------------------------------------------------------------
+
+def item_fields(item: Item) -> dict:
+    """The metadata keys of an item: all set fields except type and id, with the type revision."""
+    fields = item.model_dump(mode='json', exclude_none=True)
+    for k in ADDRESS_FIELDS:
+        fields.pop(k, None)
+    cls = type(item)
+    if cls is Item:
+        # generic model (also for unknown types): keep the stored revision
+        fields['type_revision'] = item.type_revision or 1
+    else:
+        if item.type_revision is not None and item.type_revision > cls.REVISION:
+            raise ItemError(f'{item.ref} has revision {item.type_revision}, newer than {cls.REVISION} '
+                            f'of this redvypr: not written')
+        fields['type_revision'] = cls.REVISION
+    return fields
+
+
+def item_metadata_dict(item: Item, valid_from=None, hostinfo=None, fields: typing.Optional[dict] = None) -> dict:
+    """
+    Metadata of an item in the storage format {address: [entries]}, one entry
+    per field. fields: only these keys (e.g. one changed field), default all.
+    """
+    make_ref(item.itemtype, item.id)        # checks type and id
+    values = item_fields(item) if fields is None else dict(fields)
+    return redvypr_metadata.create_metadata_dict(item_address(item.itemtype, item.id), values,
+                                                 hostinfo=hostinfo, valid_from=valid_from)
+
+
+def add_item(storage: dict, item: Item, valid_from=None, hostinfo=None, fields=None) -> bool:
+    """
+    Write an item into a metadata storage. Unchanged fields add nothing
+    (merge rules of the storage); a changed field ends its previous entry at
+    valid_from. Writing the whole item (fields=None) also ends the entries of
+    fields it does not have any more (a cleared field, a field renamed by a
+    migration). fields: write only these keys. Returns True if the storage changed.
+    """
+    md = item_metadata_dict(item, valid_from=valid_from, hostinfo=hostinfo, fields=fields)
+    status = redvypr_metadata.add_metadata_to_entries(md, storage)
+    changed = status['metadata_changed']
+    if fields is None:
+        address, entries = next(iter(md.items()))
+        keys = {e['key'] for e in entries}
+        t_from = redvypr_metadata.to_datetime(entries[0]['constraints']['valid_from']) if entries else None
+        for e in storage.get(address, []):
+            c = e.setdefault('constraints', {})
+            if e['key'] in keys or redvypr_metadata.get_context(c) or t_from is None:
+                continue
+            e_from = redvypr_metadata.to_datetime(c.get('valid_from'))
+            e_until = redvypr_metadata.to_datetime(c.get('valid_until'))
+            if (e_from is None or e_from < t_from) and (e_until is None or e_until > t_from):
+                c['valid_until'] = t_from.isoformat()
+                changed = True
+    return changed
+
+
+# --- reading ------------------------------------------------------------------------
+
+def _query(storage, address, at_time, mode='merge'):
+    return redvypr_metadata.get_metadata({'metadata': storage}, address=address, mode=mode, at_time=at_time)
+
+
+def item_from_fields(itemtype: str, item_id: str, fields: dict) -> Item:
+    """
+    Model of an item from its stored fields: migrated from an older revision
+    of its type, the generic Item if the type is unknown or the fields do not
+    validate.
+    """
+    cls = get_item_type(itemtype)
+    fields = dict(fields)
+    rev = fields.get('type_revision') or 1
+    if cls is not Item and rev < cls.REVISION:
+        try:
+            fields = cls.migrate(fields, rev)
+        except Exception:
+            logger.warning(f'could not migrate {itemtype}/{item_id} from revision {rev}', exc_info=True)
+    elif cls is not Item and rev > cls.REVISION:
+        logger.warning(f'{itemtype}/{item_id} has revision {rev}, newer than {cls.REVISION} of this redvypr')
+    fields.update(itemtype=itemtype, id=item_id)
+    try:
+        return cls.model_validate(fields)
+    except pydantic.ValidationError:
+        logger.warning(f'{itemtype}/{item_id} does not validate as {cls.__name__}, using Item', exc_info=True)
+        return Item.model_validate(fields)
+
+
+def get_item(storage: dict, ref_or_type: str, item_id: typing.Optional[str] = None,
+             at_time=None) -> typing.Optional[Item]:
+    """
+    An item at a time (default now): get_item(storage, 'breakout_v01/BO-003') or
+    get_item(storage, 'breakout_v01', 'BO-003'). None if it has no fields at that time.
+    """
+    itemtype, item_id = parse_ref(ref_or_type) if item_id is None else (ref_or_type, item_id)
+    fields = _query(storage, item_address(itemtype, item_id), at_time)
+    if not fields:
+        return None
+    return item_from_fields(itemtype, item_id, fields)
+
+
+def item_addresses(storage: dict, itemtype: typing.Optional[str] = None) -> typing.List[typing.Tuple[str, str]]:
+    """(itemtype, id) of all items in a storage (at any time), sorted."""
+    found = set()
+    for astr in list(storage.keys()):
+        parsed = parse_item_address(astr)
+        if parsed and (itemtype is None or parsed[0] == itemtype):
+            found.add(parsed)
+    return sorted(found)
+
+
+def list_items(storage: dict, itemtype: typing.Optional[str] = None, at_time=None) -> typing.List[Item]:
+    """All items existing at a time (default now), optionally of one type."""
+    items = []
+    for t, i in item_addresses(storage, itemtype):
+        item = get_item(storage, t, i, at_time=at_time)
+        if item is not None:
+            items.append(item)
+    return items
+
+
+def get_item_history(storage: dict, ref: str) -> typing.List[dict]:
+    """All stored entries of an item (key, value, constraints), sorted by key and valid_from."""
+    itemtype, item_id = parse_ref(ref)
+    entries = redvypr_metadata.get_metadata({'metadata': storage}, address=item_address(itemtype, item_id),
+                                            mode='all')
+    return sorted(entries, key=lambda e: (e['key'], str(e.get('constraints', {}).get('valid_from'))))
+
+
+def find_by_uuid(storage: dict, uuid: str, at_time=None) -> typing.Optional[Item]:
+    for item in list_items(storage, at_time=at_time):
+        if item.uuid == uuid:
+            return item
+    return None
+
+
+def children(storage: dict, ref: str, at_time=None, items=None) -> typing.List[Item]:
+    """Items whose parent is ref at a time."""
+    items = list_items(storage, at_time=at_time) if items is None else items
+    return [it for it in items if it.parent == ref]
+
+
+# --- resolving the items of a datastream ----------------------------------------------
+
+def _datakey_candidates(datakey: str) -> typing.List[str]:
+    """The datakey and its prefixes without '_suffix' ('ntc0_raw' -> 'ntc0')."""
+    cands = [datakey]
+    while '_' in datakey:
+        datakey = datakey.rsplit('_', 1)[0]
+        if datakey:
+            cands.append(datakey)
+    return cands
+
+
+def source_items(storage: dict, address, at_time=None, items=None) -> typing.List[Item]:
+    """Items naming the data source of an address (deviceid, sensorid or device)."""
+    raddr = address if isinstance(address, RedvyprAddress) else RedvyprAddress(address)
+    items = list_items(storage, at_time=at_time) if items is None else items
+    found = []
+    for it in items:
+        for field, attr in SOURCE_FIELDS:
+            value = getattr(it, field, None)
+            if value is not None and getattr(raddr, attr, None) == value:
+                found.append(it)
+                break
+    return found
+
+
+def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
+    """
+    The items of a datastream at a time (default now), as {role: item}.
+
+    1. A key 'items' ({role: item reference}) at the data address itself
+       overrides the tree (devices without a tree).
+    2. Otherwise the item naming the data source of the address is the
+       'device'; in its tree (children by 'parent', valid at the time) the
+       item whose 'slot' equals the datakey (or the datakey without a
+       '_suffix', 'ntc0_raw' -> 'ntc0') is the 'sensor', its parent the
+       'board' (if it is not the device itself).
+    Returns {} if nothing is found.
+    """
+    raddr = address if isinstance(address, RedvyprAddress) else RedvyprAddress(address)
+    # 1. Explicit assignment at the data address
+    md = _query(storage, raddr, at_time)
+    refs = md.get('items') if isinstance(md, dict) else None
+    if isinstance(refs, dict) and refs:
+        result = {}
+        for role, ref in refs.items():
+            try:
+                item = get_item(storage, ref, at_time=at_time)
+            except ItemError:
+                logger.warning(f'invalid item reference {ref!r} at {raddr}')
+                continue
+            if item is not None:
+                result[role] = item
+        return result
+
+    # 2. Tree of the device
+    items = list_items(storage, at_time=at_time)
+    devices = source_items(storage, raddr, at_time=at_time, items=items)
+    if not devices:
+        return {}
+    if len(devices) > 1:
+        logger.warning(f'several items name the source of {raddr}: {[d.ref for d in devices]}, using the first')
+    device = devices[0]
+    result = {'device': device}
+    datakey = raddr.datakey
+    if not datakey:
+        return result
+
+    by_parent = {}
+    for it in items:
+        if it.parent:
+            by_parent.setdefault(it.parent, []).append(it)
+    # breadth first through the tree of the device
+    descendants = []
+    level = [device]
+    seen = {device.ref}
+    for _ in range(MAX_TREE_DEPTH):
+        nxt = []
+        for it in level:
+            for ch in by_parent.get(it.ref, []):
+                if ch.ref not in seen:
+                    seen.add(ch.ref)
+                    descendants.append(ch)
+                    nxt.append(ch)
+        if not nxt:
+            break
+        level = nxt
+
+    for cand in _datakey_candidates(str(datakey)):
+        matches = [it for it in descendants if it.slot == cand]
+        if matches:
+            if len(matches) > 1:
+                logger.warning(f'several items in slot {cand!r} of {device.ref}: {[m.ref for m in matches]}')
+            sensor = matches[0]
+            result['sensor'] = sensor
+            if sensor.parent and sensor.parent != device.ref:
+                board = next((it for it in descendants if it.ref == sensor.parent), None)
+                if board is not None:
+                    result['board'] = board
+            break
+    return result

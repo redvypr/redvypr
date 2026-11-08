@@ -322,6 +322,26 @@ class DbReader:
             logger.debug(f'could not get metadata of {address}', exc_info=True)
             return {}
 
+    def get_items(self, address, at_time=None):
+        """
+        The items ({role: item}, see redvypr.items) of a datastream, from the
+        metadata in the database. Without at_time: at the end of the data of
+        the datastreams matching address.
+        """
+        import redvypr.items
+        storage = self.metadata_storage()
+        if not storage:
+            return {}
+        if at_time is None:
+            ends = [s.t_last for s in self.find(address) if s.t_last is not None]
+            if ends:
+                at_time = redvypr.metadata.to_isotime(max(ends))
+        try:
+            return redvypr.items.get_items(storage, address, at_time=at_time)
+        except Exception:
+            logger.debug(f'could not get the items of {address}', exc_info=True)
+            return {}
+
     def refresh(self):
         with self._lock:
             self._streams = None

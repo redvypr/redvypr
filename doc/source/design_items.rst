@@ -89,7 +89,7 @@ An item type is a pydantic model with ``model_config = ConfigDict(extra='allow')
   ``parent``, ``slot``, ``status``, ``attachments``, ``comment``. Works for
   any device without code; unknown fields are kept.
 * Specific types derive from ``Item`` and add fields with validation, e.g.
-  ``norlog_v02`` with ``hwid``, ``breakout_v01`` with ``R1`` (quantity),
+  ``norlog_v02`` (``deviceid`` = hardware ID), ``breakout_v01`` with ``R1`` (quantity),
   ``ntc_sensor`` with ``r25``, ``beta``, ``dissipation_constant``.
 
 Types register in a registry (like ``SensorFactory``); devices bring their own
@@ -141,7 +141,7 @@ swapped without a PC: the device stores the id of its board like ``setup``
 packet, so redvypr can check or create the ``parent`` entry), or detects it
 with an id chip on the board. Example::
 
-    norlog_v02/N-012          hwid: 0xA1B2...
+    norlog_v02/N-012          deviceid: 0xA1B2...
      +- breakout_v01/BO-003   parent: norlog_v02/N-012   R1: 10002.7 Ohm
          +- ntc_sensor/0042   parent: breakout_v01/BO-003, slot: ntc0
          +- hf_sensor/HF-17   parent: breakout_v01/BO-003, slot: hf0
@@ -154,10 +154,10 @@ Connection to the data source
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The root of a tree is the item of the device that sends the data. It names
-the data source with a field that matches the standard address entries of its
-packets: ``hwid`` for a norlog (``di`` of its packets), generally
-``deviceid`` or ``sensorid``. Thus redvypr finds the tree of
-``ntc0 @ i:'adc_brd' and di:'0xA1B2...'``.
+the data source with the fields ``deviceid``, ``sensorid`` or ``device`` of
+``Item``, named like the standard address entries of its packets (``di``,
+``si``, ``d``). For a norlog ``deviceid`` is its hardware ID (``hwid``).
+Thus redvypr finds the tree of ``ntc0 @ i:'adc_brd' and di:'0xA1B2...'``.
 
 
 Setup profiles as items
@@ -186,10 +186,11 @@ Resolving a channel
 
 The items of a datastream at time t, e.g. ``ntc0`` of norlog 0xA1B2...:
 
-1. the device item whose ``hwid``/``deviceid``/``sensorid`` matches the
+1. the device item whose ``deviceid``/``sensorid``/``device`` matches the
    source of the address, valid at t;
 2. its children and their children (``parent``), valid at t;
-3. the item whose ``slot`` equals the datakey (``ntc0``) is the sensor of the
+3. the item whose ``slot`` equals the datakey (``ntc0``; ``ntc0_raw`` is tried
+   as ``ntc0`` too) is the sensor of the
    channel; its parent is the board;
 4. if none: the setup profile of the device at t translates the slot of the
    items (``J2.3-4``) into the channel;
@@ -306,6 +307,9 @@ Migration
   used only inside the sensor and calibration manager
   (``sensor_and_calibration_definitions.py``,
   ``sensor_calibration_manager.py``), so the change stays local.
+  **Decided 2026-11-08:** this way (option 1); the alternatives (keeping both
+  systems side by side, or items referring to ``BaseSensor`` entries) were
+  rejected because sensors would then be kept in two places.
 * norlog: the profiles of ``adc_setups.py`` become ``setup`` items in a
   library file shipped with redvypr; the code keeps them as fallback until
   then.
@@ -314,14 +318,16 @@ Migration
 Steps
 -----
 
-1. ``Item`` model with type revisions and migrations, registry, item
+1. **Done** (``redvypr/items.py``, ``test/test_items.py``, methods of ``Redvypr``
+   and ``DbReader.get_items()``; setup profiles still missing in the
+   resolution): ``Item`` model with type revisions and migrations, registry, item
    address, writing/reading items (one key per field), ``parent``/``slot``,
    ``get_items()`` with the tree and the exception ``items``; tests.
 2. Metadata view over several sources with ``source``, precedence and
    conflicts; ``DbReader`` reads through it.
 3. Items widget: tree, form, history, move, library file.
 4. Calibration parameter from an item (``scale`` of the NTC calibration);
-   norlog item types (``norlog_v02`` with ``hwid``, ``breakout_v01``),
+   norlog item types (``norlog_v02``, ``breakout_v01``),
    resolved items in the ADC tab.
 5. Setup profiles as ``setup`` items, translation of terminal slots.
 6. Migration of ``BaseSensor``.
