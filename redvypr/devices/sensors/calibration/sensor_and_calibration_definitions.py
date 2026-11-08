@@ -1,3 +1,4 @@
+import typing
 from typing import List, Union, Literal, Type, Dict, Optional
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from datetime import datetime
@@ -9,6 +10,7 @@ import uuid
 import shutil
 from pathlib import Path
 from redvypr.redvypr_address import RedvyprAddress
+from redvypr import items as redvypr_items
 from .calibration_models import CalibrationGeneric, CalibrationLinearFactor, CalibrationNTC, CalibrationPoly
 
 class AttachmentMetadata(BaseModel):
@@ -18,9 +20,15 @@ class AttachmentMetadata(BaseModel):
     file_size_bytes: int
     sha256: str
 
-class BaseSensor(BaseModel):
+class BaseSensor(redvypr_items.Item):
     """
+    A sensor of the sensor manager. It is an item of the redvypr metadata (redvypr.items,
+    design note doc/source/design_items.rst): itemtype = sensortype, id = sn. With a serial
+    number it is stored at the item address, one metadata key per field (history per field).
     """
+    ITEMTYPE: typing.ClassVar[str] = 'BaseSensor'
+    REVISION: typing.ClassVar[int] = 1
+
     name: str = Field(default='sensor')
     description: str = Field(default='Sensor')
     sn: str = Field(default='',description="The serial number of the sensor")
@@ -29,6 +37,18 @@ class BaseSensor(BaseModel):
     attachments: List[AttachmentMetadata] = Field(default_factory=list, description="Attachments of files like photos, reports etc.")
     event_uuids: List[str] = Field(default_factory=list,description="List of UUIDs of events associated with this sensor")
     calibration_uuids: Optional[List[str]] = Field(default_factory=list,description="List of calibration uuid")
+
+    @model_validator(mode='before')
+    @classmethod
+    def _id_is_sn(cls, data):
+        """id (item) and sn (sensor) are the same: one gives the other."""
+        if isinstance(data, dict):
+            data = dict(data)
+            if data.get('sn') and not data.get('id'):
+                data['id'] = data['sn']
+            elif data.get('id') and not data.get('sn'):
+                data['sn'] = data['id']
+        return data
 
     def get_attachment_dir(self, attachment_id: uuid.UUID, base_path: Path) -> Path:
         """
@@ -129,6 +149,16 @@ class BaseSensor(BaseModel):
             return False
 
     def create_redvypr_address(self) -> 'RedvyprAddress':
+        """
+        The item address (@i:'item' and d:'<sensortype>' and si:'<sn>'); without a serial number
+        the address of older versions (key 'sensor' with the whole model).
+        """
+        if self.sn:
+            return RedvyprAddress(redvypr_items.item_address(self.ITEMTYPE, self.sn))
+        return self.create_legacy_address()
+
+    def create_legacy_address(self) -> 'RedvyprAddress':
+        """Address of older versions: one key 'sensor' with the whole model."""
         series = self.series
         astr = f"@i:sensor and name=='{self.name}' and sensortype=='{self.sensortype}' and sn=='{self.sn}'"
         if len(series) > 0:
@@ -374,6 +404,8 @@ class HeatflowClassicSensor(BaseSensor):
     Inherits from BaseSensor and adds specific fields for Heatflow Classic sensors.
     """
 
+    ITEMTYPE: typing.ClassVar[str] = 'HeatflowClassicSensor'
+    REVISION: typing.ClassVar[int] = 1
     sensortype: Literal['HeatflowClassicSensor'] = Field(
         default='HeatflowClassicSensor',
         description="Type of the sensor (fixed to 'HeatflowClassicSensor')."
@@ -424,6 +456,8 @@ class TarSensor(BaseSensor):
     Specialized class for Tar sensors.
     """
 
+    ITEMTYPE: typing.ClassVar[str] = 'TarSensor'
+    REVISION: typing.ClassVar[int] = 1
     sensortype: Literal['TarSensor'] = Field(
         default='TarSensor',
         description="Type of the sensor (fixed to 'TarSensor')."
@@ -515,6 +549,48 @@ class SensorFactory:
 # Initial registration of your sensor classes
 SensorFactory.register('TarSensor', TarSensor)
 SensorFactory.register('HeatflowClassicSensor', HeatflowClassicSensor)
+# The sensors are item types of the redvypr metadata as well (Items window, items.get_item())
+for _cls in (BaseSensor, HeatflowClassicSensor, TarSensor):
+    redvypr_items.register_item_type(_cls)
+
+
+def sensor_metadict(sensor) -> dict:
+    """
+    Metadata of a sensor for Redvypr.set_metadata_from_dict(): with a serial number at its item
+    address, one key per field; without one in the format of older versions (key 'sensor').
+    """
+    if getattr(sensor, 'sn', '') and isinstance(sensor, redvypr_items.Item):
+        return {sensor.create_redvypr_address().to_address_string(): redvypr_items.item_fields(sensor)}
+    return {sensor.create_legacy_address().to_address_string(): {'sensor': sensor.model_dump(mode='json')}}
+
+
+def sensors_from_metadata(storage: dict, at_time=None) -> list:
+    """
+    The sensors in a metadata storage ({address: [entries]}): items of the registered sensor
+    types, and sensors stored by older versions (key 'sensor' with the whole model; skipped if
+    the same sensor is an item as well).
+    """
+    import redvypr.metadata as redvypr_metadata
+    sensors = []
+    seen = set()
+    for itemtype in SensorFactory._registry:
+        for item in redvypr_items.list_items(storage, itemtype=itemtype, at_time=at_time):
+            if isinstance(item, BaseSensor):
+                sensors.append(item)
+                seen.add((item.sensortype, item.sn))
+    md = redvypr_metadata.get_metadata({'metadata': storage}, address="@i:sensor", mode='expanded',
+                                       at_time=at_time)
+    for _addr, values in md.items():
+        data = values.get('sensor') if isinstance(values, dict) else None
+        if not isinstance(data, dict):
+            continue
+        try:
+            sensor = SensorFactory.create(data)
+        except ValueError:
+            continue
+        if (getattr(sensor, 'sensortype', None), getattr(sensor, 'sn', None)) not in seen:
+            sensors.append(sensor)
+    return sensors
 
 
 class CalibrationFactory:

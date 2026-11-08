@@ -37,6 +37,13 @@ redvypr changelog
   sends the profiles of a norlog as device metadata, profiles from `setup` items win over the
   built-in ones, ADC tab "Save as profile ..." stores the table as `setup` item. The built-in
   profile `hf_ntc_v01` names the terminals of its channels.
+
+### Changed
+- Sensor and calibration manager (items step 6): `BaseSensor` derives from `redvypr.items.Item`
+  (itemtype = sensortype, id = sn); `BaseSensor`, `HeatflowClassicSensor` and `TarSensor` are item
+  types (Items window, tree, history per field). Sensors with a serial number are written to the
+  metadata as items (one key per field) instead of one key `sensor` at
+  `@i:sensor and sn==...`; sensors stored that way by older versions are still read.
 - norlog gateway: setup profiles of the ADC sequence (firmware >= 0.4.51, design note
   doc/design_aufbau_profile.md of the firmware). New module `adc_setups` with the profiles as
   templates (sequence and kind of calibration per channel), first `hf_ntc_v01` for the breakout v01

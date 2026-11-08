@@ -342,7 +342,8 @@ Steps
    warns if the R_ref of an NTC calibration on the device differs from R1 of
    the board; the calibration dialog takes R_ref from the board (new
    calibration) or offers it with a button. Calibrations applied in redvypr
-   (sensor manager) use ``resolve_param()`` the same way (with step 6).
+   (sensor manager) can use ``resolve_param()`` the same way; not yet done
+   (see open points).
 5. **Done** (``redvypr.items.SetupItem``, ``setup_of()``; norlog:
    ``adc_setups.to_item()``/``from_item()``/``update_from_items()``, button
    "Save as profile ..." in the ADC tab; the gateway sends the profiles of a
@@ -352,7 +353,14 @@ Steps
    wins. The profile item carries ``channels`` (with ``slot``, ``cal``,
    ``unit``, ``scale``, ``scale_ref``, ``hint``) and the norlog fields
    ``sensor`` and ``sequence`` as additional fields.
-6. Migration of ``BaseSensor``.
+6. **Done** (``sensor_and_calibration_definitions.py``,
+   ``sensor_calibration_manager.py``, ``test/test_sensor_items.py``):
+   ``BaseSensor`` derives from ``Item`` (itemtype = ``sensortype``, id =
+   ``sn``), ``BaseSensor``, ``HeatflowClassicSensor`` and ``TarSensor`` are
+   registered item types. The manager writes sensors with a serial number as
+   items (``sensor_metadict()``) and reads items and sensors of older
+   versions (``sensors_from_metadata()``); a sensor without serial number is
+   still written in the old format.
 
 
 Open points
@@ -362,5 +370,10 @@ Open points
   tree is kept in redvypr only (devices do not store their boards).
 * Several redvypr instances changing the same item: the merge rules keep both
   values with their times; the later ``valid_from`` wins.
+* Calibrations applied in redvypr (``CalibrationNTC`` of the sensor
+  manager): a parameter taken from an item (``scale: {item: board, key:
+  R1}``) needs a field in the calibration models and the address of the
+  channel when the calibration is applied; ``redvypr.items.resolve_param()``
+  is there.
 * Slot names: free strings; conventions per device type (channel names or
   connector pins) are documented with the item types.

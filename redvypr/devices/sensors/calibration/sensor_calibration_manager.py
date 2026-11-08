@@ -29,7 +29,7 @@ from redvypr.redvypr_datadict import check_for_command, commandpacket
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
-from .sensor_and_calibration_definitions import CalibrationFactory, SensorFactory, BaseSensor
+from .sensor_and_calibration_definitions import CalibrationFactory, SensorFactory, BaseSensor, sensor_metadict, sensors_from_metadata
 from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.devices.db.db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget
 from redvypr.devices.db.db_engines import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
@@ -147,55 +147,27 @@ class Device(RedvyprDevice):
 
     def create_metadict_from_sensor_list(self, list_name: str) -> dict:
         """
-
-        Parameters
-        ----------
-        list_name
-
-        Returns
-        -------
-        Dictionary that can be sent processed with redvypr.set_metadata_from_dict
+        Metadata of the sensors of a list for redvypr.set_metadata_from_dict(): sensors with a
+        serial number as items (one key per field, see redvypr.items), others in the format of
+        older versions (key 'sensor').
         """
         funcname = __name__ + '.create_metadatapacket_from_sensor_list():'
         logger.debug(funcname)
-        sensors = self.sensor_lists[list_name]
-
         sensor_dict_meta = {}
-        for sensor in sensors:
-            raddress = sensor.create_redvypr_address()
-            address_str = raddress.to_address_string()
-            calibration_dict = sensor.model_dump()
-            sensor_dict_meta[address_str] = {'sensor':calibration_dict}
-
+        for sensor in self.sensor_lists[list_name]:
+            sensor_dict_meta.update(sensor_metadict(sensor))
         logger.debug(funcname + 'Metadata packet created')
         return sensor_dict_meta
 
-    def create_sensor_list_from_metadata(self, list_name='metadata') -> dict:
+    def create_sensor_list_from_metadata(self, list_name='metadata') -> list:
         """
-
-        Parameters
-        ----------
-
-
-        Returns
-        -------
-
+        The list list_name with the sensors in the metadata of redvypr: items of the sensor types
+        and sensors stored by older versions (key 'sensor').
         """
-        funcname = __name__ + '.create_metadatapacket_from_sensor_list():'
+        funcname = __name__ + '.create_sensor_list_from_metadata():'
         logger.debug(funcname)
-
-        metadata = redvypr.get_metadata()
-        self.sensor_lists[list_name] = []
-        for maddr,mdata in metadata.items():
-            print(mdata)
-            if 'sensor' in mdata.keys():
-                print("Found calibration")
-                sensor_data = mdata["sensor"]
-                print(f"Sensor data:{sensor_data}")
-                sensor = SensorFactory.create(sensor_data)
-                self.sensor_lists[list_name].append(sensor)
-
-        print(f"{self.sensor_lists=}")
+        storage = self.redvypr._copy_metadata() if self.redvypr is not None else {}
+        self.sensor_lists[list_name] = sensors_from_metadata(storage)
         return self.sensor_lists[list_name]
 
     def set_metadata_from_sensor_list(self, list_name: str):
