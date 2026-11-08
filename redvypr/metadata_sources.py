@@ -433,7 +433,8 @@ def save_item_library(path: str, storage: dict, addresses=None) -> int:
     if sections['calibration']:
         doc['calibrations'] = sections['calibration']
     tmp = path + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
+    # always LF line ends (files in git shared between operating systems)
+    with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
         f.write('# redvypr item library (design note design_items.rst)\n')
         yaml.safe_dump(doc, f, sort_keys=False, allow_unicode=True)
     os.replace(tmp, path)

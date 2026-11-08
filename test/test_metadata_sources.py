@@ -227,3 +227,12 @@ def test_several_libraries_with_calibrations(tmp_path):
     other = str(tmp_path / 'other.yaml')
     assert r.save_item_library(other) == 0
     assert r.item_libraries == [inv, cals, other]
+
+
+def test_library_yaml_has_lf_line_ends(tmp_path):
+    s = {}
+    items.add_item(s, items.Item(itemtype='breakout_v01', id='BO-003', mpn='X'), valid_from=T0)
+    path = str(tmp_path / 'lf.yaml')
+    ms.save_item_library(path, s)
+    data = open(path, 'rb').read()
+    assert b'\n' in data and b'\r' not in data
