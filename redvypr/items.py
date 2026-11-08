@@ -69,7 +69,10 @@ class Item(pydantic.BaseModel):
     type_revision: typing.Optional[int] = pydantic.Field(default=None,
                                                          description='Revision of the type the item was written with')
     name: typing.Optional[str] = None
+    sn: typing.Optional[str] = pydantic.Field(default=None, description='Serial number of the thing, if not '
+                                                                       'the id (e.g. sn of a norlog, id = hwid)')
     description: typing.Optional[str] = None
+    location: typing.Optional[str] = pydantic.Field(default=None, description='Where the thing is or measures')
     manufacturer: typing.Optional[str] = None
     mpn: typing.Optional[str] = pydantic.Field(default=None, description='Manufacturer part number')
     batch: typing.Optional[str] = None
