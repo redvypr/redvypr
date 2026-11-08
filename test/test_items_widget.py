@@ -173,3 +173,12 @@ def test_sn_column_and_move_dialog_labels(widget):
     assert dlg.values()[0] == 'norlog_v02/N-012'
     dlg.parent_ref.setCurrentIndex(0)
     assert dlg.values()[0] is None
+
+
+def test_flat_list(widget):
+    w = widget
+    assert [d for d, _r in tree_refs(w)] == [0, 1, 2]           # tree
+    w.flat.setChecked(True)
+    assert tree_refs(w) == [(0, 'breakout_v01/BO-003'), (0, 'norlog_v02/N-012'), (0, 'ntc_sensor/0042')]
+    w.flat.setChecked(False)
+    assert [d for d, _r in tree_refs(w)] == [0, 1, 2]

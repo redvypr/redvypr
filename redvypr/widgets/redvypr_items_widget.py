@@ -175,6 +175,9 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         # --- left: filter, time, tree, buttons
         self.type_filter = QtWidgets.QComboBox()
         self.type_filter.currentIndexChanged.connect(self.refresh)
+        self.flat = QtWidgets.QCheckBox('flat')
+        self.flat.setToolTip('All items as a list, without the tree by parent')
+        self.flat.toggled.connect(lambda _on: self.refresh())
         self.use_now = QtWidgets.QCheckBox('now')
         self.use_now.setChecked(True)
         self.at_time = QtWidgets.QDateTimeEdit(_qdt(now_utc()))
@@ -186,6 +189,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         top = QtWidgets.QHBoxLayout()
         top.addWidget(QtWidgets.QLabel('Type'))
         top.addWidget(self.type_filter, 1)
+        top.addWidget(self.flat)
         top.addWidget(QtWidgets.QLabel('State at'))
         top.addWidget(self.at_time)
         top.addWidget(self.use_now)
@@ -323,7 +327,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             nodes[item.ref] = w
             return w
 
-        if itemtype is None:
+        if itemtype is None and not self.flat.isChecked():
             # tree by parent; items whose parent is unknown at this time are roots
             for item in all_items:
                 w = node(item)
@@ -335,8 +339,9 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
                 if w.parent() is None:
                     self.tree.addTopLevelItem(w)
         else:
-            for item in all_items:
-                if item.itemtype == itemtype:
+            # flat list (all or one type), sorted by type and id
+            for item in sorted(all_items, key=lambda i: (i.itemtype, i.id)):
+                if itemtype is None or item.itemtype == itemtype:
                     self.tree.addTopLevelItem(node(item))
         self.tree.expandAll()
         for c in range(self.tree.columnCount()):
