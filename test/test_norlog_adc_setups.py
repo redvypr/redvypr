@@ -204,3 +204,56 @@ def test_calibration_dialog_preset(widget):
     dlg = ng.AdcCalibrationDialog(widget, "adc_brd.ntc0", "1", None, 0.5, preset=preset)
     assert dlg.current_kind() == "ntc" and dlg.scale.text() == "10000" and dlg.unit.text() == "degC"
     dlg.close()
+
+
+# --- items (redvypr.items, step 4 of design_items.rst) ----------------------------------------
+
+def test_adc_tab_items_and_board_r_ref(widget):
+    import datetime
+    import redvypr
+    from redvypr import items
+    from redvypr.devices.norlog import norlog_items
+    t0 = datetime.datetime(2026, 11, 1, tzinfo=datetime.timezone.utc)
+    rv = redvypr.Redvypr(hostname='adcitems')
+    rv.add_item(norlog_items.NorlogV02(id='N-012', deviceid='GW'), valid_from=t0)
+    rv.add_item(norlog_items.BreakoutV01(id='BO-003', parent='norlog_v02/N-012',
+                                         R1=items.Quantity(value=10002.7, unit='Ohm')), valid_from=t0)
+    rv.add_item(norlog_items.NtcSensor(id='0042', parent='breakout_v01/BO-003', slot='ntc0'), valid_from=t0)
+    w = widget
+    w.device.redvypr = rv
+    show_device(w)
+    w.open_settings("GW")
+    dlg = w.settings_dialogs["GW"]
+    ntc = {"c": [1e-3, 2e-4], "unit": "degC", "kind": "ntc", "scale": 10000.0}
+    adc_answer(dlg, PROFILE, cals={"ntc0": ntc})
+    text = dlg.adc_items_state.text()
+    assert "ntc0: ntc_sensor/0042 (breakout_v01/BO-003)" in text
+    assert "ntc0: calibration R_ref 10000 differs from R1 of breakout_v01/BO-003 = 10002.7 Ohm" in text
+    row = [dlg.adc_table.item(r, 0).text() for r in range(dlg.adc_table.rowCount())].index("ntc0")
+    assert "sensor: ntc_sensor/0042" in dlg.adc_table.item(row, 0).toolTip()
+    # the calibration dialog offers R_ref of the board; a new calibration takes it
+    preset = adc_setups.get("hf_ntc_v01").channels["ntc1"]
+    assert dlg.adc_board_scale("ntc0", preset) == (10002.7, "R1 of breakout_v01/BO-003")
+    assert dlg.adc_board_scale("ntc1", preset) is None          # no item in slot ntc1
+    cdlg = ng.AdcCalibrationDialog(dlg, "adc_brd.ntc0", "1", None, 0.5, preset=preset,
+                                   board_scale=(10002.7, "R1 of breakout_v01/BO-003"))
+    assert cdlg.scale.text() == "10002.7"
+    cdlg.scale.setText("9999")
+    cdlg.board_scale_btn.click()
+    assert cdlg.scale.text() == "10002.7"
+    cdlg.close()
+    # calibration with the board value: no warning
+    adc_answer(dlg, PROFILE, cals={"ntc0": dict(ntc, scale=10002.7)})
+    assert "differs" not in dlg.adc_items_state.text()
+    dlg.close()
+    w.device.redvypr = None
+
+
+def test_adc_tab_without_redvypr(widget):
+    w = widget
+    show_device(w)
+    w.open_settings("GW")
+    dlg = w.settings_dialogs["GW"]
+    adc_answer(dlg, PROFILE, cals={})
+    assert dlg.adc_items_state.text() == ""
+    dlg.close()

@@ -100,6 +100,7 @@ import serial.tools.list_ports
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 import redvypr.metadata
+import redvypr.items as ritems
 from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.gui import iconnames
 from redvypr.redvypr_address import RedvyprAddress
@@ -111,6 +112,7 @@ from . import adc_setups
 from . import device_list
 from . import links
 from . import mag_calibration
+from . import norlog_items      # registers the norlog item types (redvypr.items)
 from . import norlog_archive
 from . import norlog_cbor
 from . import norlog_convert
@@ -124,6 +126,9 @@ from .cbor_mini import CBORDecodeError
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.norlog_gateway')
 logger.setLevel(logging.INFO)
+
+# Item types of the norlog main boards per board revision (redvypr.items, Items window)
+BOARD_ITEM_TYPES = {'v02': norlog_items.NorlogV02.ITEMTYPE, 'v02.1': norlog_items.NorlogV021.ITEMTYPE}
 
 redvypr_devicemodule = True
 
@@ -4757,8 +4762,12 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
     SCALES = {'V': 1.0, 'mV': 1e-3, 'µV': 1e-6}
     KIND_LABELS = {'poly': 'Polynomial', 'ntc': 'NTC (Steinhart-Hart / Hoge, as redvypr CalibrationNTC)'}
 
-    def __init__(self, parent, name, x_unit, cal=None, x_value=None, preset=None):
-        """preset: adc_setups.ChannelCal of the setup profile, used for a new calibration (cal None)."""
+    def __init__(self, parent, name, x_unit, cal=None, x_value=None, preset=None, board_scale=None):
+        """
+        preset: adc_setups.ChannelCal of the setup profile, used for a new calibration (cal None).
+        board_scale: (R_ref in Ohm, text) of the item of the channel (e.g. R1 of the breakout), offered
+        for the NTC scale and used for a new calibration.
+        """
         super().__init__(parent)
         self.setWindowTitle(f'Calibration {name}')
         preset = preset if cal is None else None
@@ -4798,6 +4807,9 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         self.scale.setToolTip('R = x * R_ref: the reference resistor of a ratiometric measurement (x = R/R_ref); '
                               '1 if x is already the resistance in Ohm')
         self.scale.textChanged.connect(self.update_preview)
+        self.board_scale = board_scale
+        if board_scale is not None and cal is None:
+            self.scale.setText(f'{board_scale[0]:.12g}')
         self.toff = QtWidgets.QLineEdit(f'{cal.toff:.12g}' if cal and cal.kind == 'ntc' else '273.15')
         self.toff.setToolTip('T = 1/(...) - Toff; 273.15 for degC')
         self.toff.textChanged.connect(self.update_preview)
@@ -4811,6 +4823,13 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         self.ntc_widgets = [QtWidgets.QLabel('R_ref [Ohm]'), self.scale, QtWidgets.QLabel('Toff'), self.toff]
         for i, wdg in enumerate(self.ntc_widgets):
             form.addWidget(wdg, 3, i)
+        self.board_scale_btn = None
+        if board_scale is not None:
+            self.board_scale_btn = QtWidgets.QPushButton(f'R_ref = {board_scale[1]}: {board_scale[0]:.12g} Ohm')
+            self.board_scale_btn.setToolTip('Take R_ref from the item of the channel (Items window of redvypr)')
+            self.board_scale_btn.clicked.connect(lambda: self.scale.setText(f'{self.board_scale[0]:.12g}'))
+            form.addWidget(self.board_scale_btn, 4 + (poly_calibration.ORDER_MAX + 2) // 2, 0, 1, 4)
+            self.ntc_widgets.append(self.board_scale_btn)
         self.coeffs = []
         for i in range(poly_calibration.ORDER_MAX + 1):
             edit = QtWidgets.QLineEdit()
@@ -5697,6 +5716,12 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         setup_row.addWidget(setup_btn)
         setup_row.addWidget(self.adc_setup_state, 1)
         grid.addLayout(setup_row, 4, 0, 1, 9)
+        # Items of the channels (redvypr.items): sensor and board, R_ref of the board
+        self.adc_items_state = QtWidgets.QLabel('')
+        self.adc_items_state.setWordWrap(True)
+        self.adc_items_state.setToolTip('Sensors and boards of the channels from the items of redvypr '
+                                        '(Items window: tree norlog -> board -> sensor with slot = channel)')
+        grid.addWidget(self.adc_items_state, 5, 0, 1, 9)
 
         btns = QtWidgets.QHBoxLayout()
         add_btn = QtWidgets.QPushButton('Add step')
@@ -5835,8 +5860,74 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.adc_status.setStyleSheet('color: #c08000;')
         self.adc_status.setText(f'profile {setup.name} loaded - not yet written to the device. {setup.description}')
 
+    def _redvypr(self):
+        return getattr(self.device, 'redvypr', None)
+
+    def adc_channel_address(self, channel, sensor=None):
+        """Address of a channel of the ADC sequence of this norlog (deviceid = hardware ID)."""
+        sensor = sensor or self.adc_sensor.currentText()
+        return f"{channel} @ i:'{sensor}' and di:'{self.key}'"
+
+    def adc_items(self, channel, sensor=None):
+        """Items ({role: item}) of a channel, {} without redvypr or items."""
+        rv = self._redvypr()
+        if rv is None or not hasattr(rv, 'get_items'):
+            return {}
+        try:
+            return rv.get_items(self.adc_channel_address(channel, sensor))
+        except Exception:
+            logger.debug('could not get the items of a channel', exc_info=True)
+            return {}
+
+    def adc_board_scale(self, channel, preset, found=None):
+        """(R_ref, 'field of item') of a channel whose profile takes the NTC scale from an item, else None."""
+        if preset is None or not getattr(preset, 'scale_ref', ()):
+            return None
+        role, key = preset.scale_ref
+        found = self.adc_items(channel) if found is None else found
+        item = found.get(role)
+        value = ritems.param_value(getattr(item, key, None)) if item is not None else None
+        if value is None or not value > 0:
+            return None
+        return value, f'{key} of {item.ref}'
+
+    def adc_show_items(self):
+        """Sensor and board of every channel; warns if an NTC calibration differs from R_ref of the board."""
+        sensor = self.adc_sensor.currentText()
+        setup = adc_setups.get(self.adc_setup.currentData())
+        cals = self.adc_cals.get(sensor, {})
+        parts, warnings = [], []
+        for r in range(self.adc_table.rowCount()):
+            cell = self.adc_table.item(r, 0)
+            name = cell.text() if cell is not None else ''
+            if not name:
+                continue
+            found = self.adc_items(name, sensor)
+            sens, board = found.get('sensor'), found.get('board')
+            if sens is not None:
+                parts.append(f"{name}: {sens.ref}" + (f" ({board.ref})" if board is not None else ''))
+            tip = '\n'.join(f'{role}: {it.ref}' for role, it in found.items())
+            cell.setToolTip(tip or 'no items (Items window of redvypr)')
+            preset = setup.channels.get(name) if setup is not None else None
+            bscale = self.adc_board_scale(name, preset, found)
+            cal = cals.get(name)
+            if bscale is not None and cal is not None and cal.kind == 'ntc' and \
+                    abs(cal.scale - bscale[0]) > 1e-9 * max(1.0, abs(bscale[0])):
+                warnings.append(f'{name}: calibration R_ref {cal.scale:.12g} differs from {bscale[1]} '
+                                f'= {bscale[0]:.12g} Ohm')
+        if not parts and not warnings:
+            self.adc_items_state.setStyleSheet('color: gray;')
+            self.adc_items_state.setText('items: none assigned' if self._redvypr() is not None else '')
+            return
+        text = 'items: ' + ('; '.join(parts) if parts else 'none assigned')
+        if warnings:
+            text += '\n' + '\n'.join(warnings)
+        self.adc_items_state.setStyleSheet('color: #c08000;' if warnings else '')
+        self.adc_items_state.setText(text)
+
     def adc_show_setup_state(self):
         """Setup of the device compared with its profile and the calibrations on the device."""
+        self.adc_show_items()
         sensor = self.adc_sensor.currentText()
         st = self.adc_state.get(sensor)
         if st is None:
@@ -6043,7 +6134,8 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         setup = adc_setups.get(self.adc_setup.currentData())
         preset = setup.channels.get(step.name) if setup is not None else None
         dlg = AdcCalibrationDialog(self, poly_calibration.cal_name(sensor, step.name), x_unit or step.unit(),
-                                   self.adc_cals.get(sensor, {}).get(step.name), x, preset=preset)
+                                   self.adc_cals.get(sensor, {}).get(step.name), x, preset=preset,
+                                   board_scale=self.adc_board_scale(step.name, preset))
         if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         if dlg.delete_requested:

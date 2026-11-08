@@ -417,3 +417,33 @@ def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
                     result['board'] = board
             break
     return result
+
+
+# --- parameters of items (e.g. a calibration taking R_ref from the board) ------------------
+
+def param_value(value) -> typing.Optional[float]:
+    """Number of a field value: a number, a Quantity or a dict with 'value'; else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, Quantity):
+        return float(value.value)
+    if isinstance(value, dict) and isinstance(value.get('value'), (int, float)):
+        return float(value['value'])
+    return None
+
+
+def resolve_param(storage: dict, address, role: str, key: str, at_time=None,
+                  found: typing.Optional[dict] = None):
+    """
+    A parameter of the item in a role of a datastream at a time, e.g.
+    resolve_param(storage, "ntc0 @ i:'adc_brd' and di:'0xA1B2'", 'board', 'R1').
+    found: result of get_items() for this address and time (avoids a second resolution).
+    Returns (number or None, item or None).
+    """
+    found = get_items(storage, address, at_time=at_time) if found is None else found
+    item = found.get(role)
+    if item is None:
+        return None, None
+    return param_value(getattr(item, key, None)), item

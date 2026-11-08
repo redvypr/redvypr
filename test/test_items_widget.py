@@ -68,7 +68,7 @@ def test_tree_form_and_save(widget):
     w.form_fields['R1'][0].setText('{"value": 10002.7, "unit": "Ohm"}')
     w.save_item()
     item = w.redvypr.get_item('breakout_v01/BO-003')
-    assert item.mpn == 'BRK-1' and item.R1 == {'value': 10002.7, 'unit': 'Ohm'}
+    assert item.mpn == 'BRK-1' and items.param_value(item.R1) == 10002.7   # dict or Quantity (breakout_v01 type)
     assert 'saved' in w.status.text()
     keys = {w.history.item(r, 0).text() for r in range(w.history.rowCount())}
     assert {'mpn', 'R1', 'parent'} <= keys

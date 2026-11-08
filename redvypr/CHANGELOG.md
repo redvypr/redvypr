@@ -26,6 +26,11 @@ redvypr changelog
   chosen time, type filter, form of the selected item saved as new values from a time on,
   additional fields, history with validity and source, new item or copy (optional uuid), move to
   another parent/slot, load and save item library files.
+- norlog items (step 4): item types `norlog_v02`, `norlog_v021`, `breakout_v01` (with the measured
+  reference resistor `R1`), `ntc_sensor`, `hf_sensor`. The ADC tab shows the sensor and board of
+  every channel from the items and warns if the R_ref of an NTC calibration on the device differs
+  from R1 of the board; the calibration dialog takes R_ref from the board. Setup profile channels
+  name the parameter (`ChannelCal.scale_ref`). `redvypr.items.resolve_param()`.
 - norlog gateway: setup profiles of the ADC sequence (firmware >= 0.4.51, design note
   doc/design_aufbau_profile.md of the firmware). New module `adc_setups` with the profiles as
   templates (sequence and kind of calibration per channel), first `hf_ntc_v01` for the breakout v01

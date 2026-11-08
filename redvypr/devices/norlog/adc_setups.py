@@ -20,6 +20,8 @@ class ChannelCal:
     unit: str = ""
     scale: float = 1.0
     hint: str = ""
+    # ntc: R_ref from an item of the channel (redvypr.items), (role, field), e.g. ('board', 'R1')
+    scale_ref: tuple = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -59,8 +61,10 @@ _add(Setup(
     channels={
         "hf0": ChannelCal("poly", "W/m2", hint="linear: c1 = 1 / sensitivity [W/m2 per V]"),
         "hf1": ChannelCal("poly", "W/m2", hint="linear: c1 = 1 / sensitivity [W/m2 per V]"),
-        "ntc0": ChannelCal("ntc", "degC", scale=10000.0, hint="NTC, scale = R_ref = 10000"),
-        "ntc1": ChannelCal("ntc", "degC", scale=10000.0, hint="NTC, scale = R_ref = 10000"),
+        "ntc0": ChannelCal("ntc", "degC", scale=10000.0, scale_ref=("board", "R1"),
+                           hint="NTC, scale = R_ref = R1 of the board (nominal 10000)"),
+        "ntc1": ChannelCal("ntc", "degC", scale=10000.0, scale_ref=("board", "R1"),
+                           hint="NTC, scale = R_ref = R1 of the board (nominal 10000)"),
     },
 ))
 

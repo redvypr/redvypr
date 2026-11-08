@@ -333,9 +333,16 @@ Steps
    JSON/YAML for structured values, additional fields), history with source,
    new/copy (optional uuid), move to parent/slot, load/save library file.
    Assigning items from the address widget and the ADC tab follow with step 4.
-4. Calibration parameter from an item (``scale`` of the NTC calibration);
-   norlog item types (``norlog_v02``, ``breakout_v01``),
-   resolved items in the ADC tab.
+4. **Done** (``redvypr/items.py``: ``param_value()``, ``resolve_param()``;
+   ``devices/norlog/norlog_items.py``: ``norlog_v02``, ``norlog_v021``,
+   ``breakout_v01`` with ``R1``, ``ntc_sensor``, ``hf_sensor``; profile
+   channels name the parameter, ``ChannelCal.scale_ref = ('board', 'R1')``).
+   The norlog calibration is applied on the device, so the scale is a number
+   there: the ADC tab shows the items of every channel (sensor, board) and
+   warns if the R_ref of an NTC calibration on the device differs from R1 of
+   the board; the calibration dialog takes R_ref from the board (new
+   calibration) or offers it with a button. Calibrations applied in redvypr
+   (sensor manager) use ``resolve_param()`` the same way (with step 6).
 5. Setup profiles as ``setup`` items, translation of terminal slots.
 6. Migration of ``BaseSensor``.
 

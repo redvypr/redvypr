@@ -173,3 +173,13 @@ def test_redvypr_instance():
     assert r.get_item('gadget/9', at_time='2026-11-05T00:00:00Z').comment == 'c'
     assert [i.ref for i in r.list_items(itemtype='gadget', at_time=T2)] == ['gadget/9']
     assert len(r.get_item_history('gadget/9')) == 3
+
+
+def test_resolve_param():
+    storage = {}
+    tree(storage)
+    value, item = items.resolve_param(storage, "ntc0 @ i:'adc_brd' and di:'0xA1B2'", 'board', 'R1')
+    assert value == 10002.7 and item.ref == 'breakout_test/BO-003'
+    assert items.resolve_param(storage, "ntc0 @ i:'adc_brd' and di:'0xA1B2'", 'board', 'mpn')[0] is None
+    assert items.resolve_param(storage, "ntc0 @ di:'0xFFFF'", 'board', 'R1') == (None, None)
+    assert items.param_value({'value': 3, 'unit': 'Ohm'}) == 3.0 and items.param_value(True) is None
