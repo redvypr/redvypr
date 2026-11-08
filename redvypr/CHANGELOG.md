@@ -45,6 +45,10 @@ redvypr changelog
   (split where items or calibrations change), `get_data_calibrated()` for a `DbReader`.
   Built-in items (`redvypr.items.register_builtin_item()`): the norlog module registers its
   built-in setup profiles.
+- Item defaults: entries at `@i:'item'` apply to all items, at `@i:'item' and d:'<type>'` to all
+  items of a type (the item itself wins). Items are read by direct lookups of these addresses and
+  their own (`redvypr.items.item_keys()`, any spelling of the address) instead of a search over all
+  metadata addresses per item: `get_items()` with 600 items and 2600 addresses 14 ms instead of 1 s.
 
 ### Changed
 - Sensor and calibration manager (items step 6): `BaseSensor` derives from `redvypr.items.Item`

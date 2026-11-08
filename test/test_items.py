@@ -214,3 +214,55 @@ def test_setup_profile_translates_terminals():
     setup = items.get_item(storage, 'setup/hf_ntc_v01')
     assert setup.channel_of_slot('J2.3-4') == 'ntc0' and setup.slot_of_channel('ntc1') is None
     assert items.setup_name({'setup': 'x'}) == 'x' and items.setup_name({'setup': {'a': 'y'}}, 'a') == 'y'
+
+
+def test_defaults_for_all_items_and_type():
+    from redvypr import metadata as md
+    storage = {}
+    tree(storage)
+
+    def put(address, values):
+        md.add_metadata_to_entries(md.create_metadata_dict(address, values, valid_from=T0), storage)
+    put("@i:'item'", {'manufacturer': 'all', 'comment': 'from all'})
+    put("@i:'item' and d:'ntc_sensor'", {'manufacturer': 'TDK'})      # written by hand, other order
+    put("@d:'ntc_sensor' and i:'item' and si:'0042'", {'batch': 'B7'})  # own address in another spelling
+    ntc = items.get_item(storage, 'ntc_sensor/0042')
+    assert ntc.manufacturer == 'TDK' and ntc.comment == 'from all' and ntc.batch == 'B7' and ntc.mpn == 'NTC-2k'
+    hf = items.get_item(storage, 'hf_sensor/HF-17')
+    assert hf.manufacturer == 'all'
+    # the item itself wins
+    put(items.item_address('ntc_sensor', '0042'), {'manufacturer': 'Vishay'})
+    assert items.get_item(storage, 'ntc_sensor/0042').manufacturer == 'Vishay'
+    # defaults do not create items, and are no items themselves
+    assert items.get_item(storage, 'ntc_sensor/9999') is None
+    assert len(items.list_items(storage)) == 4
+    # history: only the entries of the item itself
+    assert {e['key'] for e in items.get_item_history(storage, 'ntc_sensor/0042')} >= {'batch', 'manufacturer', 'mpn'}
+    assert all(e['source_address'] != "@i:'item'" for e in items.get_item_history(storage, 'ntc_sensor/0042'))
+
+
+def test_get_items_scales():
+    """Many items moved several times: one get_items() stays fast (no search over all addresses per item)."""
+    import datetime
+    import time
+    from redvypr import metadata as md
+    utc = datetime.timezone.utc
+    t0 = datetime.datetime(2026, 1, 1, tzinfo=utc)
+    storage = {}
+    for d in range(100):
+        items.add_item(storage, items.Item(itemtype='logger', id=f'L{d}', deviceid=f'D{d}'), valid_from=t0)
+        items.add_item(storage, items.Item(itemtype='board', id=f'B{d}', parent=f'logger/L{d}'), valid_from=t0)
+        for k in range(4):
+            it = items.Item(itemtype='ntc', id=f'N{d}_{k}', parent=f'board/B{d}', slot=f'ntc{k}')
+            items.add_item(storage, it, valid_from=t0)
+            for m in range(1, 4):
+                items.add_item(storage, it, valid_from=t0 + datetime.timedelta(days=30 * m),
+                               fields={'slot': f'ntc{(k + m) % 4}'})
+    for o in range(2000):
+        md.add_metadata_to_entries(md.create_metadata_dict(f"x{o} @ d:'dev{o % 50}'", {'unit': 'V'},
+                                                           valid_from=t0), storage)
+    t = time.perf_counter()
+    found = items.get_items(storage, "ntc0 @ i:'adc' and di:'D3'", at_time=t0 + datetime.timedelta(days=45))
+    dt = time.perf_counter() - t
+    assert found['sensor'].ref == 'ntc/N3_3'
+    assert dt < 0.5, f'get_items took {dt:.3f} s'

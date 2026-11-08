@@ -279,6 +279,43 @@ def _query(storage, address, at_time, mode='merge'):
     return redvypr_metadata.get_metadata({'metadata': storage}, address=address, mode=mode, at_time=at_time)
 
 
+def item_keys(storage: dict) -> dict:
+    """
+    The item addresses of a storage: {(itemtype, id): [address strings]}, with the defaults
+    (None, None) for '@i:'item'' (all items) and (itemtype, None) for '@i:'item' and d:'<type>''.
+    Other address forms are not item addresses. The parsed addresses are cached, so one pass is cheap.
+    """
+    keys = {}
+    for astr in list(storage.keys()):
+        try:
+            raddr = redvypr_metadata._parsed_address(astr)[0]
+        except Exception:
+            continue
+        if raddr.packetid != ITEM_PACKETID or raddr.get_datakeyentries():
+            continue
+        if raddr.deviceid is not None or raddr.sensor is not None:
+            continue
+        if raddr.sensorid and not raddr.device:
+            continue
+        keys.setdefault((raddr.device or None, raddr.sensorid or None), []).append(astr)
+    return keys
+
+
+def _fields_at(storage: dict, addresses, at_time) -> dict:
+    """Values of the entries at these addresses valid at a time (default now); later entries win."""
+    t = redvypr_metadata.to_datetime(at_time) if at_time is not None else \
+        redvypr_metadata.to_datetime(__import__('time').time())
+    fields = {}
+    for astr in addresses or []:
+        for e in storage.get(astr) or []:
+            c = e.get('constraints') or {}
+            f = redvypr_metadata.to_datetime(c.get('valid_from'))
+            u = redvypr_metadata.to_datetime(c.get('valid_until'))
+            if (f is None or f <= t) and (u is None or t < u):
+                fields[e['key']] = e['value']
+    return fields
+
+
 def item_from_fields(itemtype: str, item_id: str, fields: dict) -> Item:
     """
     Model of an item from its stored fields: migrated from an older revision
@@ -304,34 +341,42 @@ def item_from_fields(itemtype: str, item_id: str, fields: dict) -> Item:
 
 
 def get_item(storage: dict, ref_or_type: str, item_id: typing.Optional[str] = None,
-             at_time=None, builtin: bool = True) -> typing.Optional[Item]:
+             at_time=None, builtin: bool = True, keys: typing.Optional[dict] = None) -> typing.Optional[Item]:
     """
     An item at a time (default now): get_item(storage, 'breakout_v01/BO-003') or
     get_item(storage, 'breakout_v01', 'BO-003'). None if it has no fields at that time;
     then a built-in item of that reference if builtin (register_builtin_item()).
+
+    The item reads the entries at its own address and the defaults at '@i:'item'' (all items) and
+    '@i:'item' and d:'<type>'' (its type): all items, then the type, then the item; the more specific
+    wins. It exists only if its own address has fields at that time. keys: result of item_keys().
     """
     itemtype, item_id = parse_ref(ref_or_type) if item_id is None else (ref_or_type, item_id)
-    fields = _query(storage, item_address(itemtype, item_id), at_time)
-    if not fields:
+    make_ref(itemtype, item_id)
+    keys = item_keys(storage) if keys is None else keys
+    own = _fields_at(storage, keys.get((itemtype, item_id)), at_time)
+    if not own:
         return BUILTIN_ITEMS.get(make_ref(itemtype, item_id)) if builtin else None
+    fields = _fields_at(storage, keys.get((None, None)), at_time)
+    fields.update(_fields_at(storage, keys.get((itemtype, None)), at_time))
+    fields.update(own)
     return item_from_fields(itemtype, item_id, fields)
 
 
-def item_addresses(storage: dict, itemtype: typing.Optional[str] = None) -> typing.List[typing.Tuple[str, str]]:
+def item_addresses(storage: dict, itemtype: typing.Optional[str] = None,
+                   keys: typing.Optional[dict] = None) -> typing.List[typing.Tuple[str, str]]:
     """(itemtype, id) of all items in a storage (at any time), sorted."""
-    found = set()
-    for astr in list(storage.keys()):
-        parsed = parse_item_address(astr)
-        if parsed and (itemtype is None or parsed[0] == itemtype):
-            found.add(parsed)
-    return sorted(found)
+    keys = item_keys(storage) if keys is None else keys
+    return sorted(k for k in keys if k[0] and k[1] and (itemtype is None or k[0] == itemtype))
 
 
-def list_items(storage: dict, itemtype: typing.Optional[str] = None, at_time=None) -> typing.List[Item]:
+def list_items(storage: dict, itemtype: typing.Optional[str] = None, at_time=None,
+               keys: typing.Optional[dict] = None) -> typing.List[Item]:
     """All items existing at a time (default now), optionally of one type."""
+    keys = item_keys(storage) if keys is None else keys
     items = []
-    for t, i in item_addresses(storage, itemtype):
-        item = get_item(storage, t, i, at_time=at_time, builtin=False)
+    for t, i in item_addresses(storage, itemtype, keys=keys):
+        item = get_item(storage, t, i, at_time=at_time, builtin=False, keys=keys)
         if item is not None:
             items.append(item)
     return items
@@ -340,8 +385,12 @@ def list_items(storage: dict, itemtype: typing.Optional[str] = None, at_time=Non
 def get_item_history(storage: dict, ref: str) -> typing.List[dict]:
     """All stored entries of an item (key, value, constraints), sorted by key and valid_from."""
     itemtype, item_id = parse_ref(ref)
-    entries = redvypr_metadata.get_metadata({'metadata': storage}, address=item_address(itemtype, item_id),
-                                            mode='all')
+    entries = []
+    for astr in item_keys(storage).get((itemtype, item_id), []):
+        for e in storage.get(astr) or []:
+            e = dict(e)
+            e['source_address'] = astr
+            entries.append(e)
     return sorted(entries, key=lambda e: (e['key'], str(e.get('constraints', {}).get('valid_from'))))
 
 
@@ -406,9 +455,10 @@ def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
     refs = md.get('items') if isinstance(md, dict) else None
     if isinstance(refs, dict) and refs:
         result = {}
+        keys = item_keys(storage)
         for role, ref in refs.items():
             try:
-                item = get_item(storage, ref, at_time=at_time)
+                item = get_item(storage, ref, at_time=at_time, keys=keys)
             except ItemError:
                 logger.warning(f'invalid item reference {ref!r} at {raddr}')
                 continue
@@ -417,7 +467,8 @@ def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
         return result
 
     # 2. Tree of the device
-    items = list_items(storage, at_time=at_time)
+    keys = item_keys(storage)
+    items = list_items(storage, at_time=at_time, keys=keys)
     devices = source_items(storage, raddr, at_time=at_time, items=items)
     if not devices:
         return {}
@@ -450,7 +501,7 @@ def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
         level = nxt
 
     # 3. slots: the datakey itself, 4. else the slot the setup profile gives the channel
-    setup = setup_of(storage, raddr, at_time=at_time, metadata=md)
+    setup = setup_of(storage, raddr, at_time=at_time, metadata=md, keys=keys)
     if setup is not None:
         result['setup'] = setup
     slots = []
@@ -484,7 +535,7 @@ def setup_name(metadata: dict, packetid=None) -> typing.Optional[str]:
     return value if isinstance(value, str) and value else None
 
 
-def setup_of(storage: dict, address, at_time=None, metadata=None) -> typing.Optional[SetupItem]:
+def setup_of(storage: dict, address, at_time=None, metadata=None, keys=None) -> typing.Optional[SetupItem]:
     """The setup profile item a datastream names at a time (metadata 'setup' of its device), or None."""
     raddr = address if isinstance(address, RedvyprAddress) else RedvyprAddress(address)
     md = _query(storage, raddr, at_time) if metadata is None else metadata
@@ -492,7 +543,7 @@ def setup_of(storage: dict, address, at_time=None, metadata=None) -> typing.Opti
     if not name:
         return None
     try:
-        item = get_item(storage, SetupItem.ITEMTYPE, name, at_time=at_time)
+        item = get_item(storage, SetupItem.ITEMTYPE, name, at_time=at_time, keys=keys)
     except ItemError:
         return None
     return item if isinstance(item, SetupItem) else None

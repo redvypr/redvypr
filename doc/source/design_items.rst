@@ -289,7 +289,8 @@ choice "converted with items" in the plots.
 Performance: item index (planned)
 ---------------------------------
 
-Status 2026-11-08: concept, not implemented (no performance problem yet).
+Status 2026-11-08: direct lookups and defaults implemented (below); the
+index itself is a concept (no performance problem yet).
 
 The present implementation is simple: ``get_items()`` lists all items at
 the time (``list_items()``) to build the tree, and every item is read with a
@@ -323,13 +324,20 @@ built once as an index instead of being searched in every query.
   depends on the size of that one tree, not on the number of all items
   (expected well below 1 ms per query, also with thousands of items).
 
-**Defaults for items:** today an entry at a more general address applies to
-the items as well (normal metadata matching): ``@i:'item' and
-d:'ntc_sensor'`` (e.g. ``manufacturer``) to all items of that type,
-``@i:'item'`` to all items. The index reads these two forms directly (two
-lookups): all items, then the type, then the item itself; the more specific
-wins. Other patterns (e.g. addresses with content filters that happen to match
-items) no longer apply to items.
+**Defaults for items (implemented):** an entry at ``@i:'item' and
+d:'ntc_sensor'`` (e.g. ``manufacturer``) applies to all items of that type,
+one at ``@i:'item'`` to all items. ``get_item()`` reads these two forms and
+its own address directly (``item_keys()``: one pass over the address
+strings, whose parsing is cached, finds the item addresses in any spelling):
+all items, then the type, then the item itself; the more specific wins. An
+item exists only if its own address has entries at the time. Other patterns
+(e.g. addresses with content filters that happen to match items) do not apply
+to items.
+
+With these direct lookups (no search over all addresses per item) the same
+measurement gives 1.5 ms (60 items), 6.4 ms (300) and 14 ms (600 items, 2600
+addresses): linear in the number of items, because ``get_items()`` still
+reads all items at the time. The index below removes that as well.
 
 **Built, not stored:** the index is derived data and lives in memory only.
 It is built at the first use after reading and dropped when the metadata
