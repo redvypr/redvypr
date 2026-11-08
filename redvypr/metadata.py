@@ -10,7 +10,9 @@ logger = logging.getLogger('redvypr.metadata')
 # All other constraint keys are its context (e.g. 'site'): entries with the same
 # key, value and context describe the same metadata.
 TIME_KEYS = ('valid_from', 'valid_until')
-NON_CONTEXT_KEYS = TIME_KEYS + ('hostinfo',)
+# 'source': where an entry comes from (e.g. 'library:items.yaml', 'db:nov.sqlite'),
+# see redvypr.metadata_sources; equal entries of different sources are merged
+NON_CONTEXT_KEYS = TIME_KEYS + ('hostinfo', 'source')
 
 # Address entries naming the source of a datastream
 SOURCE_KEYS = ('device', 'deviceid', 'sensorid', 'sensor')
@@ -274,6 +276,17 @@ def _merge_entry(stored_list, new_entry):
         if (e_from is None or new_until is None or e_from <= new_until) and \
                 (e_until is None or e_until >= new_from):
             changed = False
+            # keep the sources of both (see redvypr.metadata_sources)
+            new_src = new_constraints.get('source')
+            if new_src is not None:
+                old = c.get('source')
+                srcs = [] if old is None else (list(old) if isinstance(old, (list, tuple)) else [old])
+                add = list(new_src) if isinstance(new_src, (list, tuple)) else [new_src]
+                add = [s for s in add if s not in srcs]
+                if add:
+                    srcs.extend(add)
+                    c['source'] = srcs[0] if len(srcs) == 1 else srcs
+                    changed = True
             if e_from is not None and new_from < e_from:
                 c['valid_from'] = new_from.isoformat()
                 changed = True

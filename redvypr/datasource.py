@@ -95,6 +95,11 @@ class DbReader:
         self._lock = threading.RLock()
         self._streams = None
         self._metadata = None
+        # Further metadata (redvypr.metadata_sources): callable returning a list of
+        # (name, storage), e.g. the running instance with its item libraries; set by
+        # the DatasourceRegistry. None: only the metadata of the database.
+        self.metadata_sources = None
+        self._combined = None           # (time, storage, conflicts)
 
     # --- dialect ---
     def _t(self):
@@ -300,13 +305,45 @@ class DbReader:
                 self._metadata = storage
             return self._metadata
 
+    COMBINED_MAX_AGE = 2.0      # s, the merged metadata are made again after this time
+
+    def combined_metadata(self, refresh=False):
+        """
+        (storage, conflicts): the metadata of the database merged with the further
+        sources (metadata_sources), rules see redvypr.metadata_sources. Without
+        further sources the metadata of the database and no conflicts.
+        """
+        import time
+        import redvypr.metadata_sources as msources
+        own = self.metadata_storage(refresh=refresh)
+        if self.metadata_sources is None:
+            return own, []
+        with self._lock:
+            if not refresh and self._combined is not None and                     time.monotonic() - self._combined[0] < self.COMBINED_MAX_AGE:
+                return self._combined[1], self._combined[2]
+        try:
+            others = list(self.metadata_sources() or [])
+        except Exception:
+            logger.warning('could not get the further metadata sources', exc_info=True)
+            others = []
+        tagged = msources.tag_storage(own, f'db:{self.config.name}', force=True)
+        storage, conflicts = msources.merge_storages([(self.config.name, tagged)] + others)
+        with self._lock:
+            self._combined = (time.monotonic(), storage, conflicts)
+        return storage, conflicts
+
+    def metadata_conflicts(self):
+        """Conflicts between the metadata of the database and the further sources."""
+        return self.combined_metadata()[1]
+
     def get_metadata(self, address, mode='merge', at_time=None, time_range=None):
         """
-        Metadata of an address (e.g. {'unit': 'degC'}), from the metadata in the database.
+        Metadata of an address (e.g. {'unit': 'degC'}), from the metadata in the database
+        merged with the further sources (metadata_sources, e.g. item libraries).
         Without at_time and time_range: the metadata valid during the data of the
         datastreams matching address (not now, the data may be old).
         """
-        storage = self.metadata_storage()
+        storage = self.combined_metadata()[0]
         if not storage:
             return {}
         if at_time is None and time_range is None:
@@ -329,7 +366,7 @@ class DbReader:
         the datastreams matching address.
         """
         import redvypr.items
-        storage = self.metadata_storage()
+        storage = self.combined_metadata()[0]
         if not storage:
             return {}
         if at_time is None:
@@ -346,6 +383,7 @@ class DbReader:
         with self._lock:
             self._streams = None
             self._metadata = None
+            self._combined = None
 
     def close(self):
         with self._lock:
@@ -440,11 +478,13 @@ class DatasourceRegistry:
     on_change() is called after a data source was added, changed or removed.
     """
 
-    def __init__(self, datasources=(), on_change=None):
+    def __init__(self, datasources=(), on_change=None, metadata_sources=None):
         self._lock = threading.RLock()
         self._datasources = [DataSourceConfig.model_validate(d) for d in datasources]
         self._readers = {}
         self.on_change = on_change
+        # callable returning further metadata sources [(name, storage)] for the readers
+        self.metadata_sources = metadata_sources
 
     @property
     def datasources(self) -> typing.List[DataSourceConfig]:
@@ -497,6 +537,7 @@ class DatasourceRegistry:
                 reader = None
             if reader is None:
                 reader = open_datasource(config)
+                reader.metadata_sources = self.metadata_sources
                 self._readers[name] = reader
             elif refresh:
                 reader.refresh()

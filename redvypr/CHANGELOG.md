@@ -14,6 +14,14 @@ redvypr changelog
   `get_items(address, at_time)` finds the device, board and sensor of a datastream (or uses a key
   `items` at the data address). Methods `Redvypr.add_item()`, `get_item()`, `list_items()`,
   `get_items()`, `get_item_history()` and `DbReader.get_items()`. Tests in test_items.py.
+- Metadata from several sources (step 2): new module `redvypr.metadata_sources`. Entries carry
+  their origin in the constraint `source` (not part of the context; equal entries of different
+  sources are joined, their sources kept as list). `merge_storages()` joins instance, item
+  libraries and databases with a precedence per kind of source (items: library > instance > db)
+  and reports conflicts. `DbReader.get_metadata()`/`get_items()` use the metadata of the database
+  merged with the running instance (set by the `DatasourceRegistry`), so later corrections reach
+  old data; `DbReader.metadata_conflicts()`. Item library files (YAML): configuration
+  `item_libraries`, `Redvypr.load_item_library()`, `save_item_library()`.
 - norlog gateway: setup profiles of the ADC sequence (firmware >= 0.4.51, design note
   doc/design_aufbau_profile.md of the firmware). New module `adc_setups` with the profiles as
   templates (sequence and kind of calibration per channel), first `hf_ntc_v01` for the breakout v01

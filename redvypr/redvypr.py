@@ -37,6 +37,7 @@ from redvypr.redvypr_address import RedvyprAddress
 import redvypr.packet_statistic as redvypr_packet_statistic
 import redvypr.metadata as redvypr_metadata
 import redvypr.items as redvypr_items
+import redvypr.metadata_sources as redvypr_metadata_sources
 from redvypr.datasource import DataSourceConfig, DatasourceRegistry
 from redvypr.version import version
 import redvypr.files as files
@@ -102,6 +103,8 @@ class RedvyprConfig(pydantic.BaseModel):
     gui_home_icon: str = 'redvypr'
     datasources: typing.List[DataSourceConfig] = pydantic.Field(default=[], description='Databases to read '
                                                                 'data from (e.g. by the XY plot), used by their name')
+    item_libraries: typing.List[str] = pydantic.Field(default=[], description='Item library files (YAML), '
+                                                      'loaded into the metadata at the start (redvypr.items)')
 
 
 
@@ -516,7 +519,9 @@ class Redvypr(QtCore.QObject):
         self.config = config # This is the initial version
         # Databases to read from (redvypr.datasource), used by their name
         self.datasource_registry = DatasourceRegistry(config.datasources or [],
-                                                      on_change=self.datasources_changed_signal.emit)
+                                                      on_change=self.datasources_changed_signal.emit,
+                                                      metadata_sources=self._reader_metadata_sources)
+        self.item_libraries = []        # item library files (redvypr.metadata_sources)
         self.properties = {}  # Properties that are distributed with the device
         self.numdevice = 0
         self.devices = []  # List containing dictionaries with information about all attached devices
@@ -543,6 +548,15 @@ class Redvypr(QtCore.QObject):
             logger.debug(
                 f'Added {len(config.metadata.keys())} entries from config to metadata {len(self.deviceinfo_all['metadata'].keys())} local entries.')
             #print("Metadata done")
+        # Item library files: into the metadata, entries tagged 'library:<file>'
+        for path in config.item_libraries or []:
+            try:
+                storage = redvypr_metadata_sources.load_item_library(path)
+                redvypr.metadata.do_metadata({'_metadata': storage}, self.deviceinfo_all,
+                                             auto_add_packetfilter=False)
+                self.item_libraries.append(path)
+            except Exception:
+                logger.warning(f'could not load the item library {path}', exc_info=True)
 
 
         # Create the RedvyprAddresses
@@ -598,6 +612,11 @@ class Redvypr(QtCore.QObject):
             logger.debug(funcname + 'Adding metadata done')
         for datasource in redvypr_config.datasources or []:
             self.add_datasource(datasource)
+        for path in getattr(redvypr_config, 'item_libraries', None) or []:
+            try:
+                self.load_item_library(path)
+            except Exception:
+                logger.warning(f'could not load the item library {path}', exc_info=True)
 
     # --- data sources (databases to read from, redvypr.datasource) ---
     @property
@@ -645,7 +664,8 @@ class Redvypr(QtCore.QObject):
         config = RedvyprConfig(hostname=self.hostinfo['host'], metadata=self.metadata,
                                devicepaths=self.device_paths, loglevel=loglevel_tmp,
                                redvyp_version=version, date_created=str(datetime.datetime.utcnow()),
-                               devices=devices, datasources=[d.model_copy() for d in self.datasources])
+                               devices=devices, datasources=[d.model_copy() for d in self.datasources],
+                               item_libraries=list(self.item_libraries))
 
         return config
 
@@ -1508,6 +1528,39 @@ class Redvypr(QtCore.QObject):
     def get_item_history(self, ref: str) -> list:
         """All stored entries of an item."""
         return redvypr_items.get_item_history(self._copy_metadata(), ref)
+
+    def load_item_library(self, path: str) -> int:
+        """
+        Loads an item library file (YAML) into the metadata; its entries carry the
+        source 'library:<file name>'. Loading the same file again adds nothing.
+        Returns the number of items in the file.
+        """
+        storage = redvypr_metadata_sources.load_item_library(path)
+        datapacket = redvypr.data_packets.commandpacket(command='reply')
+        datapacket['_metadata'] = storage
+        self.redvyprqueue.put(datapacket)
+        self.redvyprreplyqueue.get()
+        if path not in self.item_libraries:
+            self.item_libraries.append(path)
+        return len(storage)
+
+    def save_item_library(self, path: str | None = None) -> int:
+        """
+        Writes all items of the metadata into an item library file (default: the
+        first loaded one). Returns the number of items.
+        """
+        if path is None:
+            if not self.item_libraries:
+                raise ValueError('no item library loaded, give a file name')
+            path = self.item_libraries[0]
+        n = redvypr_metadata_sources.save_item_library(path, self._copy_metadata())
+        if path not in self.item_libraries:
+            self.item_libraries.append(path)
+        return n
+
+    def _reader_metadata_sources(self):
+        """Further metadata of the database readers: this instance with its item libraries."""
+        return [('instance', self._copy_metadata())]
 
     def set_metadata_from_dict(self, metadata: dict) -> None:
         """

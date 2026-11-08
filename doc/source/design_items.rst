@@ -323,7 +323,9 @@ Steps
    resolution): ``Item`` model with type revisions and migrations, registry, item
    address, writing/reading items (one key per field), ``parent``/``slot``,
    ``get_items()`` with the tree and the exception ``items``; tests.
-2. Metadata view over several sources with ``source``, precedence and
+2. **Done** (``redvypr/metadata_sources.py``, ``test/test_metadata_sources.py``;
+   item libraries in the configuration ``item_libraries``, loaded into the
+   instance; ``DbReader`` merges its database with the instance): Metadata view over several sources with ``source``, precedence and
    conflicts; ``DbReader`` reads through it.
 3. Items widget: tree, form, history, move, library file.
 4. Calibration parameter from an item (``scale`` of the NTC calibration);
