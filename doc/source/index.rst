@@ -13,6 +13,7 @@ Welcome to redvypr's documentation!
    redvypr.rst
    design.rst
    metadata.rst
+   design_items.rst
    api.rst
 
 ..   device.rst
