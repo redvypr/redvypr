@@ -55,9 +55,7 @@ e.g. ``@i:'item' and d:'breakout_v01' and di:'BO-003'``. ``i:'item'`` keeps
 items apart from data sources (a device called like an item type gets no item
 metadata) and allows to list all items with the query ``@i:'item'``. Like
 ``d`` and ``di`` of a data source (kind of device and this one device), ``d``
-is the item type and ``di`` the id of the item. (Before 2026-11-08 the id was
-in ``si``; such addresses are still read, and item libraries are converted
-when loaded, so they are saved in the current form.) The
+is the item type and ``di`` the id of the item. The
 item reference used elsewhere is the short form ``<itemtype>/<id>``
 (``breakout_v01/BO-003``). The id is the serial number of a physical item or
 the name of a template (see setup profiles).

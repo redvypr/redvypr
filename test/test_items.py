@@ -226,7 +226,7 @@ def test_defaults_for_all_items_and_type():
         md.add_metadata_to_entries(md.create_metadata_dict(address, values, valid_from=T0), storage)
     put("@i:'item'", {'manufacturer': 'all', 'comment': 'from all'})
     put("@i:'item' and d:'ntc_sensor'", {'manufacturer': 'TDK'})      # written by hand, other order
-    put("@d:'ntc_sensor' and i:'item' and si:'0042'", {'batch': 'B7'})  # own address in another spelling
+    put("@d:'ntc_sensor' and i:'item' and di:'0042'", {'batch': 'B7'})  # own address in another spelling
     ntc = items.get_item(storage, 'ntc_sensor/0042')
     assert ntc.manufacturer == 'TDK' and ntc.comment == 'from all' and ntc.batch == 'B7' and ntc.mpn == 'NTC-2k'
     hf = items.get_item(storage, 'hf_sensor/HF-17')
@@ -269,25 +269,15 @@ def test_get_items_scales():
     assert dt < 0.5, f'get_items took {dt:.3f} s'
 
 
-def test_item_address_with_deviceid_and_legacy_si(tmp_path):
-    # the id is in 'di'; the older form with 'si' is still read and converted when a library is loaded
-    from redvypr import metadata_sources as ms
+def test_item_address_with_deviceid():
+    # the id is in 'di'; addresses with 'si' are no item addresses
     addr = items.item_address('norlog_v02', '30572ED22A0BE4E8')
     assert "di:'30572ED22A0BE4E8'" in addr and 'si:' not in addr
     assert items.parse_item_address(addr) == ('norlog_v02', '30572ED22A0BE4E8')
-    old = "@i:'item' and d:'breakout_v01' and si:'BO-001'"
-    assert items.parse_item_address(old) == ('breakout_v01', 'BO-001')
-    assert items.canonical_item_address(old) == items.item_address('breakout_v01', 'BO-001')
+    assert items.parse_item_address("@i:'item' and d:'breakout_v01' and si:'BO-001'") is None
     assert items.parse_item_address("@i:'item' and d:'x' and di:'a' and si:'b'") is None
     s = {}
-    md.add_metadata_to_entries(md.create_metadata_dict(old, {'name': 'old', 'mpn': 'M'}, valid_from=T0), s)
-    md.add_metadata_to_entries(md.create_metadata_dict(items.item_address('breakout_v01', 'BO-001'),
-                                                       {'name': 'new'}, valid_from=T0), s)
-    it = items.get_item(s, 'breakout_v01/BO-001', at_time=T1)
-    assert it.name == 'new' and it.mpn == 'M'         # current form wins, older fields still read
-    path = str(tmp_path / 'old.yaml')
-    import yaml
-    with open(path, 'w', encoding='utf-8') as f:
-        yaml.safe_dump({'items': {old: {'name': 'old', 'mpn': 'M'}}}, f)
-    lib = ms.load_item_library(path)
-    assert list(lib) == [items.item_address('breakout_v01', 'BO-001')]
+    md.add_metadata_to_entries(md.create_metadata_dict("@i:'item' and d:'breakout_v01' and si:'BO-001'",
+                                                       {'name': 'old'}, valid_from=T0), s)
+    assert items.get_item(s, 'breakout_v01/BO-001', at_time=T1, builtin=False) is None
+    assert items.list_items(s, at_time=T1) == []
