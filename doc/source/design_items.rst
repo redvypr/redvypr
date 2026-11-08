@@ -327,7 +327,12 @@ Steps
    item libraries in the configuration ``item_libraries``, loaded into the
    instance; ``DbReader`` merges its database with the instance): Metadata view over several sources with ``source``, precedence and
    conflicts; ``DbReader`` reads through it.
-3. Items widget: tree, form, history, move, library file.
+3. **Done** (``redvypr/widgets/redvypr_items_widget.py``, button "Items" in the
+   main window, ``test/test_items_widget.py``): Items widget with tree by
+   parent and state time, type filter, form (own simple form: text fields,
+   JSON/YAML for structured values, additional fields), history with source,
+   new/copy (optional uuid), move to parent/slot, load/save library file.
+   Assigning items from the address widget and the ADC tab follow with step 4.
 4. Calibration parameter from an item (``scale`` of the NTC calibration);
    norlog item types (``norlog_v02``, ``breakout_v01``),
    resolved items in the ADC tab.

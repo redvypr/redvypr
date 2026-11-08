@@ -22,6 +22,10 @@ redvypr changelog
   merged with the running instance (set by the `DatasourceRegistry`), so later corrections reach
   old data; `DbReader.metadata_conflicts()`. Item library files (YAML): configuration
   `item_libraries`, `Redvypr.load_item_library()`, `save_item_library()`.
+- Items window (step 3, button "Items" in the main window): tree of the items by parent at a
+  chosen time, type filter, form of the selected item saved as new values from a time on,
+  additional fields, history with validity and source, new item or copy (optional uuid), move to
+  another parent/slot, load and save item library files.
 - norlog gateway: setup profiles of the ADC sequence (firmware >= 0.4.51, design note
   doc/design_aufbau_profile.md of the firmware). New module `adc_setups` with the profiles as
   templates (sequence and kind of calibration per channel), first `hf_ntc_v01` for the breakout v01

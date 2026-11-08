@@ -471,8 +471,13 @@ class redvyprWidget(QtWidgets.QWidget):
         self.edit_metadata_button = QtWidgets.QPushButton('Edit Metadata')
         self.edit_metadata_button.clicked.connect(self.open_edit_metadata_widget)
         self.edit_metadata_button.setFont(font)
+        self.edit_items_button = QtWidgets.QPushButton('Items')
+        self.edit_items_button.setToolTip('Sensors, boards and other items with their history (redvypr.items)')
+        self.edit_items_button.clicked.connect(self.open_items_widget)
+        self.edit_items_button.setFont(font)
         # Add buttons to widget
         self.home_widget_layout.addWidget(self.edit_metadata_button)
+        self.home_widget_layout.addWidget(self.edit_items_button)
         self.home_widget_layout.addWidget(self.add_device_button)
         # Add device table to widget
         self.home_widget_layout.addWidget(self.device_table_widget)
@@ -591,6 +596,15 @@ class redvyprWidget(QtWidgets.QWidget):
         #self.metadatawidget = MetadataWidget(self.redvypr)
         self.metadatawidget = RedvyprMetadataTable(redvypr_instance = self.redvypr)
         self.metadatawidget.show()
+
+    def open_items_widget(self):
+        """
+        Opens the window of the items (sensors, boards, ...) in the metadata
+        """
+        from redvypr.widgets.redvypr_items_widget import RedvyprItemsWidget
+        self.itemswidget = RedvyprItemsWidget(redvypr_instance=self.redvypr)
+        self.itemswidget.resize(1100, 650)
+        self.itemswidget.show()
 
     def open_add_device_widget(self):
         """
