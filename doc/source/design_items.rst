@@ -286,6 +286,70 @@ built-in profiles as built-in ``setup`` items. Tests in
 choice "converted with items" in the plots.
 
 
+Performance: item index (planned)
+---------------------------------
+
+Status 2026-11-08: concept, not implemented (no performance problem yet).
+
+The present implementation is simple: ``get_items()`` lists all items at
+the time (``list_items()``) to build the tree, and every item is read with a
+normal metadata query, which tests every stored address. The cost grows with
+items x addresses. Measured (per device a logger, a board and four NTCs, each
+NTC moved three times, plus other metadata):
+
+=====  =================  =====================
+Items  Addresses (total)  one ``get_items()``
+=====  =================  =====================
+60     260                17 ms
+300    1300               290 ms
+600    2600               1050 ms
+=====  =================  =====================
+
+``calibrate_series()`` does this once per part of the series.
+
+That an item only names its parent is not the problem: the other direction is
+built once as an index instead of being searched in every query.
+
+**Item index** per state of the metadata:
+
+* one pass over the storage: the item addresses are parsed once; every item
+  reads only the entries at its own address (``storage[address]``), no
+  search over all addresses;
+* children index with times: ``parent -> [(child, valid_from, valid_until)]``
+  from the ``parent`` entries; the children at time t without touching all
+  items;
+* source index: ``deviceid``/``sensorid``/``device`` -> item, with times;
+* ``get_items()`` then needs the device, its subtree and the slot: the cost
+  depends on the size of that one tree, not on the number of all items
+  (expected well below 1 ms per query, also with thousands of items).
+
+**Defaults for items:** today an entry at a more general address applies to
+the items as well (normal metadata matching): ``@i:'item' and
+d:'ntc_sensor'`` (e.g. ``manufacturer``) to all items of that type,
+``@i:'item'`` to all items. The index reads these two forms directly (two
+lookups): all items, then the type, then the item itself; the more specific
+wins. Other patterns (e.g. addresses with content filters that happen to match
+items) no longer apply to items.
+
+**Built, not stored:** the index is derived data and lives in memory only.
+It is built at the first use after reading and dropped when the metadata
+change: in redvypr after ``metadata_changed``, in the ``DbReader`` together
+with the merged metadata (cached 2 s), in ``calibrate_series()`` once for the
+whole series. Storing it is not done: it would duplicate the metadata (two
+truths, e.g. after a change of the item library in git or with another
+database) and it depends on the combination of sources (instance, libraries,
+database with precedence). Building it costs about one pass over the item
+entries, i.e. about as much as reading the metadata.
+
+Only for very large stocks in a shared database (Timescale, tens of thousands
+of items) the relations could be kept as a table of the database (parent,
+child, from, until) with a database index and queried there; only if
+building the index in memory turns out to be too slow.
+
+The measurement above becomes a test with a time limit when the index is
+implemented.
+
+
 Storage and exchange
 --------------------
 
