@@ -16,7 +16,7 @@ from redvypr.devices.norlog import norlog_gateway as ng
 from redvypr.devices.norlog import poly_calibration
 from redvypr.devices.norlog import ports
 
-PROFILE = ("on=1,sps=10,filter=sinc3,interval=10000,setup=hf_ntc_v01;hf0,0,1,128,INT,0,-,-,10,1;"
+PROFILE = ("on=1,sps=5,filter=sinc3,interval=10000,setup=hf_ntc_v01;hf0,0,1,128,INT,0,-,-,10,1;"
            "hf1,2,3,128,INT,0,-,-,10,3;ntc0,4,6,1,REF1,100,4,-,20;ntc1,5,6,1,REF1,100,5,-,20")
 
 
@@ -49,7 +49,7 @@ def test_profile_hf_ntc_v01():
     seq.sps = "20"
     seq.steps[0].gain = "64"
     seq.steps.pop()
-    assert adc_setups.differences(seq, setup) == ["data rate 20 instead of 10", "hf0 changed", "ntc1 missing"]
+    assert adc_setups.differences(seq, setup) == ["data rate 20 instead of 5", "hf0 changed", "ntc1 missing"]
 
 
 def test_status_and_calibrations():
