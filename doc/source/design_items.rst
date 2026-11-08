@@ -96,6 +96,29 @@ Types register in a registry (like ``SensorFactory``); devices bring their own
 types (the norlog module brings ``norlog_v02``, ``breakout_v01``, ``setup``).
 The GUI uses the specific model if the type is known, otherwise ``Item``.
 
+Revisions of item types
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Item types change: later a further parameter of a sensor type is wanted, a
+field is renamed or gets another unit. Every item type therefore has a
+**revision** (``ClassVar`` of the model, an integer counted up with every
+change of the type), and every item stores the revision of the type it was
+written with (key ``type_revision``).
+
+* A new optional field needs no migration: older items simply do not have the
+  key (default ``None``); the revision is counted up anyway, so it is
+  documented which items were written before the field existed.
+* A renamed field or a changed meaning gets a **migration function** of the
+  type (``migrate(entries, from_revision)``); items of an older revision are
+  migrated when read, and written with the new revision when they are saved
+  the next time (new entries from that time on, the history stays).
+* An item of a revision newer than the code knows is shown and kept
+  unchanged (``extra='allow'``), with a warning; it is not written back.
+
+Not to be confused with the hardware revision of a thing (breakout v01
+rev B): that is a normal field (``hw_revision``) of the item, or a new item
+type if the boards differ in function.
+
 
 The tree: parent and slot
 -------------------------
@@ -215,6 +238,48 @@ Storage and exchange
   ``status: retired`` instead.
 
 
+Metadata from several sources
+-----------------------------
+
+Metadata come from several places: the running instance (configuration,
+devices, connected instances), the item library file(s), and every database
+(SQLite files, Timescale), which holds the metadata known when the data were
+written. Today a ``DbReader`` uses only the metadata of its own database, so
+a later correction (R1 measured in December with ``valid_from`` = production
+of the board) never reaches the data of November.
+
+Rules:
+
+1. **One main source per kind of information.** Items, tree and profiles: the
+   item library (or, for a team, one central database chosen instead).
+   Information a device reports itself (firmware, ``setup``, hwid): the
+   device, via its packets. Free metadata of a measurement (location,
+   comment): the configuration. Databases are never the main source; they
+   keep what was known at the time of the measurement.
+2. **Merge, do not replace.** Data are evaluated with the snapshot of their
+   database plus the current library and instance. The merge rules of the
+   storage already join equal entries and fit later corrections with their
+   own validity into the history.
+3. **Precedence for real conflicts** (same address, key and context,
+   overlapping time, other value): for items library > instance > database;
+   for metadata reported by a device the device wins. Configurable.
+4. **Provenance.** Every entry gets ``source`` (e.g.
+   ``library:items.yaml@<git commit>``, ``db:nov.sqlite``,
+   ``device:norlog_0xA1B2``). It is not part of the context (added to
+   ``NON_CONTEXT_KEYS`` like ``hostinfo``), so equal entries of different
+   sources are still merged; the sources of a merged entry are kept as a
+   list.
+5. **Conflicts are shown** in the Items and metadata windows with both values
+   and their sources; they are resolved in the main source.
+6. **Databases are not changed afterwards.** A data file keeps its snapshot;
+   an export with the merged metadata gives a self-contained file if needed.
+
+Implementation: a **metadata view over several sources** (instance, library
+files, one or more databases) that applies these rules;
+``DbReader.get_metadata()``, ``get_items()`` and the calibration read through
+it instead of only their own database.
+
+
 GUI
 ---
 
@@ -237,8 +302,10 @@ Migration
 * ``BaseSensor`` of the sensor manager becomes an item type
   (``sensortype`` = ``itemtype``), its address changes to the item address,
   one key per field. Reading the old addresses (``@i:sensor and sn==...``,
-  one key ``sensor``) stays possible and converts them. To be decided with
-  the author of the sensor manager.
+  one key ``sensor``) stays possible and converts them. ``BaseSensor`` is
+  used only inside the sensor and calibration manager
+  (``sensor_and_calibration_definitions.py``,
+  ``sensor_calibration_manager.py``), so the change stays local.
 * norlog: the profiles of ``adc_setups.py`` become ``setup`` items in a
   library file shipped with redvypr; the code keeps them as fallback until
   then.
@@ -247,15 +314,17 @@ Migration
 Steps
 -----
 
-1. ``Item`` model, registry, item address, writing/reading items (one key per
-   field), ``parent``/``slot``, ``get_items()`` with the tree and the
-   exception ``items``; tests.
-2. Items widget: tree, form, history, move, library file.
-3. Calibration parameter from an item (``scale`` of the NTC calibration);
+1. ``Item`` model with type revisions and migrations, registry, item
+   address, writing/reading items (one key per field), ``parent``/``slot``,
+   ``get_items()`` with the tree and the exception ``items``; tests.
+2. Metadata view over several sources with ``source``, precedence and
+   conflicts; ``DbReader`` reads through it.
+3. Items widget: tree, form, history, move, library file.
+4. Calibration parameter from an item (``scale`` of the NTC calibration);
    norlog item types (``norlog_v02`` with ``hwid``, ``breakout_v01``),
    resolved items in the ADC tab.
-4. Setup profiles as ``setup`` items, translation of terminal slots.
-5. Migration of ``BaseSensor``.
+5. Setup profiles as ``setup`` items, translation of terminal slots.
+6. Migration of ``BaseSensor``.
 
 
 Open points
