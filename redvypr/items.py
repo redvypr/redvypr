@@ -152,6 +152,18 @@ class SetupItem(Item):
         return props.get('slot') if isinstance(props, dict) else None
 
 
+# Templates registered in code (e.g. built-in setup profiles of a device module), ref -> item.
+# get_item() returns them if the storage has no item of that reference.
+BUILTIN_ITEMS: typing.Dict[str, Item] = {}
+
+
+def register_builtin_item(item: Item) -> Item:
+    """Register a built-in item (a template in code); an item of the same reference in the metadata wins."""
+    make_ref(item.itemtype, item.id)
+    BUILTIN_ITEMS[item.ref] = item
+    return item
+
+
 def get_item_type(itemtype: str) -> typing.Type[Item]:
     """The model of an item type; the generic Item for unknown types."""
     return ITEM_TYPES.get(itemtype, Item)
@@ -292,15 +304,16 @@ def item_from_fields(itemtype: str, item_id: str, fields: dict) -> Item:
 
 
 def get_item(storage: dict, ref_or_type: str, item_id: typing.Optional[str] = None,
-             at_time=None) -> typing.Optional[Item]:
+             at_time=None, builtin: bool = True) -> typing.Optional[Item]:
     """
     An item at a time (default now): get_item(storage, 'breakout_v01/BO-003') or
-    get_item(storage, 'breakout_v01', 'BO-003'). None if it has no fields at that time.
+    get_item(storage, 'breakout_v01', 'BO-003'). None if it has no fields at that time;
+    then a built-in item of that reference if builtin (register_builtin_item()).
     """
     itemtype, item_id = parse_ref(ref_or_type) if item_id is None else (ref_or_type, item_id)
     fields = _query(storage, item_address(itemtype, item_id), at_time)
     if not fields:
-        return None
+        return BUILTIN_ITEMS.get(make_ref(itemtype, item_id)) if builtin else None
     return item_from_fields(itemtype, item_id, fields)
 
 
@@ -318,7 +331,7 @@ def list_items(storage: dict, itemtype: typing.Optional[str] = None, at_time=Non
     """All items existing at a time (default now), optionally of one type."""
     items = []
     for t, i in item_addresses(storage, itemtype):
-        item = get_item(storage, t, i, at_time=at_time)
+        item = get_item(storage, t, i, at_time=at_time, builtin=False)
         if item is not None:
             items.append(item)
     return items

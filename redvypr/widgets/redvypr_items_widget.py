@@ -428,7 +428,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
     def create_item(self, itemtype, item_id, valid_from=None, source=None, with_uuid=False):
         try:
             ref = ritems.make_ref(itemtype, item_id)
-            if self.redvypr.get_item(ref, at_time=valid_from) is not None:
+            if self.redvypr.get_item(ref, at_time=valid_from, builtin=False) is not None:
                 raise ValueError(f'{ref} exists already')
             data = {}
             if source is not None:

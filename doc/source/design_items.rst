@@ -225,6 +225,67 @@ Calibrations stay where they are (sensor manager, files); they are found by
 the id of the sensor item.
 
 
+Conversion into units
+---------------------
+
+The calibrations (sensor manager: ``CalibrationNTC``, ``CalibrationPoly``,
+...) convert with ``raw2data()`` from ``unit_input`` into ``unit``. With
+items a value of a channel is converted in two stages that belong to
+different things:
+
+==========================  ===========================  ==============================
+Stage                       Belongs to                   Source
+==========================  ===========================  ==============================
+1. measuring circuit:       the board / the setup        setup profile of the channel:
+   x = R/R_ref -> R = x*R1                               ``scale_ref`` (item parameter,
+                                                         e.g. ``R1`` of the board) or
+                                                         ``scale`` (number)
+2. sensor: R -> T           the sensor                   calibration with ``sn`` = id of
+                                                         the sensor item, ``raw2data()``
+==========================  ===========================  ==============================
+
+The sensor calibration does not contain R_ref: moving the sensor changes
+stage 1, not stage 2. A sensor without measuring circuit (heat flux sensor in
+V) has no stage 1 (scale 1).
+
+For a value of a channel at time t:
+
+1. ``get_items(address, t)``: sensor, board, setup profile;
+2. input = raw * scale of the channel (``scale_ref`` of the profile channel
+   resolved with the items, else its ``scale``, else 1);
+3. calibration: of all calibrations with ``sn`` = id of the sensor, the
+   latest with a date before t (if several channels: the one whose
+   ``channel`` datakey is the datakey of the data, ``ntc0_raw`` -> ``ntc0``);
+4. value = ``calibration.raw2data(input)`` with the unit of the calibration.
+
+Calibrations stay objects of their own (sensor manager, metadata at
+``@i:calibration``, files), chosen by date, not fields of the sensor item: a
+sensor has several calibrations over the years.
+
+Templates in code: device modules can register **built-in items**
+(``redvypr.items.register_builtin_item()``), e.g. the built-in setup profiles
+of the norlog. ``get_item()`` returns them if the storage has no item of that
+reference; an item in the storage wins.
+
+Where it runs: when the data are evaluated (from a database: always with the
+current items and calibrations, also for older data; the raw data stay
+unchanged) and live in a processing device (later). Both use the same
+function ``apply_calibration()``; for a time series ``calibrate_series()``
+splits the data where items, assignments or calibrations change.
+
+For the norlog NTCs the conversion can then be done in redvypr instead of on
+the device: from the value ``ntc0`` (= x) with R1 of the board and the
+calibration of the sensor; both may run side by side for a comparison.
+
+**Implemented** (2026-11-08): ``redvypr/devices/sensors/calibration/item_calibration.py``
+with ``apply_calibration()``, ``calibrate_series()``, ``get_data_calibrated()``
+(for a ``DbReader``), ``select_calibration()``, ``calibrations_from_metadata()``;
+``redvypr.items.register_builtin_item()``; the norlog module registers its
+built-in profiles as built-in ``setup`` items. Tests in
+``test/test_item_calibration.py``. Not yet: the live processing device and a
+choice "converted with items" in the plots.
+
+
 Storage and exchange
 --------------------
 
@@ -341,9 +402,8 @@ Steps
    there: the ADC tab shows the items of every channel (sensor, board) and
    warns if the R_ref of an NTC calibration on the device differs from R1 of
    the board; the calibration dialog takes R_ref from the board (new
-   calibration) or offers it with a button. Calibrations applied in redvypr
-   (sensor manager) can use ``resolve_param()`` the same way; not yet done
-   (see open points).
+   calibration) or offers it with a button. Calibrations applied in redvypr:
+   see "Conversion into units".
 5. **Done** (``redvypr.items.SetupItem``, ``setup_of()``; norlog:
    ``adc_setups.to_item()``/``from_item()``/``update_from_items()``, button
    "Save as profile ..." in the ADC tab; the gateway sends the profiles of a
@@ -370,10 +430,8 @@ Open points
   tree is kept in redvypr only (devices do not store their boards).
 * Several redvypr instances changing the same item: the merge rules keep both
   values with their times; the later ``valid_from`` wins.
-* Calibrations applied in redvypr (``CalibrationNTC`` of the sensor
-  manager): a parameter taken from an item (``scale: {item: board, key:
-  R1}``) needs a field in the calibration models and the address of the
-  channel when the calibration is applied; ``redvypr.items.resolve_param()``
-  is there.
+* Calibrations applied in redvypr: R_ref is not a field of the calibration
+  but stage 1 of the conversion (setup profile of the channel), see
+  "Conversion into units". Open: live processing device, plots.
 * Slot names: free strings; conventions per device type (channel names or
   connector pins) are documented with the item types.

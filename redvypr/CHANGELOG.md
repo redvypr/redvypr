@@ -37,6 +37,14 @@ redvypr changelog
   sends the profiles of a norlog as device metadata, profiles from `setup` items win over the
   built-in ones, ADC tab "Save as profile ..." stores the table as `setup` item. The built-in
   profile `hf_ntc_v01` names the terminals of its channels.
+- Conversion into units with items (design note, section "Conversion into units"): new module
+  `devices/sensors/calibration/item_calibration.py`. Stage 1 (measuring circuit): input = raw *
+  scale of the setup profile channel (`scale_ref` resolved with the items, e.g. R1 of the board,
+  else the nominal `scale`); stage 2 (sensor): the latest calibration of the sensor item (by `sn`
+  and date, channel if several) with `raw2data()`. `apply_calibration()`, `calibrate_series()`
+  (split where items or calibrations change), `get_data_calibrated()` for a `DbReader`.
+  Built-in items (`redvypr.items.register_builtin_item()`): the norlog module registers its
+  built-in setup profiles.
 
 ### Changed
 - Sensor and calibration manager (items step 6): `BaseSensor` derives from `redvypr.items.Item`

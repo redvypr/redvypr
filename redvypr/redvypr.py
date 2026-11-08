@@ -1513,9 +1513,9 @@ class Redvypr(QtCore.QObject):
         self.redvyprreplyqueue.get()
         return True
 
-    def get_item(self, ref: str, at_time=None):
-        """An item ('<itemtype>/<id>') at a time (default now), None if unknown."""
-        return redvypr_items.get_item(self._copy_metadata(), ref, at_time=at_time)
+    def get_item(self, ref: str, at_time=None, builtin: bool = True):
+        """An item ('<itemtype>/<id>') at a time (default now), None if unknown (builtin: also built-in items)."""
+        return redvypr_items.get_item(self._copy_metadata(), ref, at_time=at_time, builtin=builtin)
 
     def list_items(self, itemtype: str | None = None, at_time=None) -> list:
         """All items existing at a time (default now), optionally of one type."""

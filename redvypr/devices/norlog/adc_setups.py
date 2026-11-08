@@ -227,3 +227,13 @@ def device_setups_text(setups):
         text = ", ".join(f"{k}: {v}" for k, v in sorted(setups.items()))
     tip = "\n".join(f"{k}: {v} - {get(v).title if get(v) else 'unknown profile'}" for k, v in sorted(setups.items()))
     return text, tip
+
+
+def _register_builtin_items():
+    """The built-in profiles as built-in items 'setup/<name>' (redvypr.items): found by the items of a channel."""
+    import redvypr.items
+    for setup in SETUPS.values():
+        redvypr.items.register_builtin_item(to_item(setup))
+
+
+_register_builtin_items()
