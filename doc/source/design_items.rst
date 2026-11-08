@@ -97,6 +97,45 @@ An item type is a pydantic model with ``model_config = ConfigDict(extra='allow')
 Types register in a registry (like ``SensorFactory``); devices bring their own
 types (the norlog module brings ``norlog_v02``, ``breakout_board_v01``, ``setup``).
 The GUI uses the specific model if the type is known, otherwise ``Item``.
+Item types are named **per model**, in English (``calypso_CMI1018``,
+``breakout_board_v01``), not per category.
+
+Item types as data
+~~~~~~~~~~~~~~~~~~
+
+Status 2026-11-08: implemented (``redvypr.item_types``); a type editor in the
+GUI is still open.
+
+A type can be defined without Python, as data like the items: at
+``@i:'itemtype' and d:'<type>'`` with one key per part of the definition,
+in a library file the section ``item_types`` (e.g. a file
+``item_types.yaml`` in the inventory repository, since types are shared by
+all inventories). The short form is accepted when loading::
+
+    item_types:
+      calypso_CMI1018:
+        description: Calypso Instruments ultrasonic wind meter CMI1018
+        base: item                   # or another type whose fields are inherited
+        revision: 1
+        defaults: {manufacturer: Calypso Instruments, mpn: CMI1018}
+        fields:
+          heading_offset: {kind: quantity, unit: deg, description: Mounting offset to north}
+          interface:      {kind: str, choices: [NMEA0183, RS485]}
+        renamed: {}                  # old -> new field, migration to this revision
+
+Field kinds: ``str``, ``int``, ``float``, ``bool``, ``quantity`` (value with a
+fixed unit: a number is taken in that unit, another unit is rejected; no
+conversion), ``ref`` (item reference), ``list``, ``dict``; optional
+``unit``, ``description`` (tooltip in the form), ``default``, ``choices``.
+
+redvypr builds a pydantic model per definition (``pydantic.create_model``) and
+registers it like a Python type when a library is loaded and when the Items
+window is refreshed. Rules: a definition with the name of a Python type
+extends it (more fields, descriptions, defaults; the Python fields and
+migrations stay); otherwise the base is ``Item`` or the type in ``base``; the
+definition valid now is used (its history is kept); ``renamed`` gives the
+migration of items of older revisions; an item that does not validate is
+shown as generic ``Item`` with a warning in the log.
 
 Revisions of item types
 ~~~~~~~~~~~~~~~~~~~~~~~

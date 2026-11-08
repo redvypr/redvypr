@@ -15,6 +15,7 @@ import yaml
 from PyQt6 import QtCore, QtWidgets
 
 import redvypr.items as ritems
+import redvypr.item_types as ritem_types
 
 logger = logging.getLogger('redvypr.widgets.items')
 
@@ -300,6 +301,11 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
     # --- tree ---
     def refresh(self):
         at = self.time()
+        # item types defined as data in the metadata of the instance
+        try:
+            ritem_types.register_from_storage(self.redvypr._copy_metadata())
+        except Exception:
+            logger.warning('could not register the item types of the metadata', exc_info=True)
         all_items = self.redvypr.list_items(at_time=at)
         types = sorted({i.itemtype for i in all_items})
         current = self.type_filter.currentData()
@@ -378,21 +384,31 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             return
         cls = type(item)
         rev = f', revision {item.type_revision}' if item.type_revision else ''
-        self.title.setText(f'<b>{item.ref}</b> ({cls.__name__}{rev})<br>{item.address}')
+        if getattr(cls, 'ORIGIN', 'python') == 'data':
+            kind = 'type defined as data'
+        elif cls is ritems.Item and item.itemtype != 'item':
+            kind = 'type not defined: generic Item'
+        else:
+            kind = cls.__name__
+        self.title.setText(f'<b>{item.ref}</b> ({kind}{rev})<br>{item.address}')
         for key, finfo in cls.model_fields.items():
             if key in FORM_SKIP:
                 continue
-            self._add_row(key, getattr(item, key), _base_type(finfo.annotation), finfo.description)
+            extra = finfo.json_schema_extra if isinstance(finfo.json_schema_extra, dict) else {}
+            self._add_row(key, getattr(item, key), _base_type(finfo.annotation), finfo.description,
+                          unit=extra.get('unit'))
         for key, value in (item.model_extra or {}).items():
             self._add_row(key, value, None, 'additional field')
         self.valid_from.setDateTime(_qdt(now_utc()))
         self.show_history(item.ref)
 
-    def _add_row(self, key, value, base, tip=None):
+    def _add_row(self, key, value, base, tip=None, unit=None):
         edit = QtWidgets.QLineEdit(value_to_text(value))
         if tip:
-            edit.setToolTip(tip)
-        if base is None:
+            edit.setToolTip(tip + (f' [{unit}]' if unit else ''))
+        if unit:
+            edit.setPlaceholderText(f'number in {unit}, or {{value: ..., unit: {unit}, method: ...}}')
+        elif base is None:
             edit.setPlaceholderText('JSON or YAML text, e.g. {value: 10002.7, unit: Ohm}')
         self.form.addRow(key, edit)
         self.form_fields[key] = (edit, base)

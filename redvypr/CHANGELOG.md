@@ -7,6 +7,13 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- Item types as data (`redvypr.item_types`, design note section "Item types as data"): a type
+  defined in the metadata at `@i:'itemtype' and d:'<type>'` / in the section `item_types` of a
+  library file (short form `<type>: {description, base, revision, fields, defaults, renamed}`)
+  becomes a pydantic model registered like a Python type; field kinds str, int, float, bool,
+  quantity (fixed unit), ref, list, dict with unit, description, default, choices; a definition
+  of a Python type extends it. The Items form shows the field descriptions and units. Item type
+  `breakout_v01` renamed `breakout_board_v01` (types named per model in English).
 - Items in the metadata (design note doc/source/design_items.rst, step 1): new module
   `redvypr.items` for physical things (loggers, boards, sensors, ...) and templates. An item lives
   at `@i:'item' and d:'<itemtype>' and di:'<id>'`, one metadata key per field with its own validity

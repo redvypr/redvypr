@@ -227,11 +227,17 @@ def merge_storages(sources: typing.Iterable[typing.Tuple[str, dict]],
 # files can be loaded (e.g. inventory_norlog.yaml, calibrations.yaml); an address belongs to
 # the file it was loaded from (source 'library:<file name>'), see assign_library_entries().
 
-LIBRARY_KINDS = ('item', 'calibration')
+LIBRARY_KINDS = ('item', 'itemtype', 'calibration')
+# Section of each kind in a YAML library file
+LIBRARY_SECTIONS = {'item': 'items', 'itemtype': 'item_types', 'calibration': 'calibrations'}
 
 
 def library_entries(storage: dict) -> dict:
-    """{address: (kind, entries)} of the library entries of a storage: items and calibrations."""
+    """
+    {address: (kind, entries)} of the library entries of a storage: items, item type
+    definitions (redvypr.item_types) and calibrations.
+    """
+    import redvypr.item_types as ritem_types
     out = {}
     for addr, entries in (storage or {}).items():
         if not isinstance(entries, list):
@@ -240,6 +246,10 @@ def library_entries(storage: dict) -> dict:
         if redvypr_items.parse_item_address(addr):
             if entries:
                 out[addr] = ('item', entries)
+            continue
+        if ritem_types.parse_itemtype_address(addr):
+            if entries:
+                out[addr] = ('itemtype', entries)
             continue
         cal = [e for e in entries if e['key'] == 'calibration']
         if cal:
@@ -390,14 +400,22 @@ def load_item_library(path: str) -> dict:
     else:
         with open(path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f) or {}
-        if isinstance(data, dict) and any(k in data for k in ('items', 'calibrations')) and \
-                all(isinstance(data.get(k, {}), dict) for k in ('items', 'calibrations')):
+        sections = tuple(LIBRARY_SECTIONS.values())
+        if isinstance(data, dict) and any(k in data for k in sections) and \
+                all(isinstance(data.get(k) or {}, dict) for k in sections):
+            import redvypr.item_types as ritem_types
             joined = {}
-            for k in ('items', 'calibrations'):
-                joined.update(data.get(k) or {})
+            for k in sections:
+                part = data.get(k) or {}
+                if k == 'item_types':
+                    part = ritem_types.short_form_to_storage(part)
+                joined.update(part)
             data = joined
     storage = redvypr_metadata.normalize_metadata(data)
     storage = {a: e for a, (_k, e) in library_entries(storage).items()}
+    # item types defined in the file: usable right away
+    import redvypr.item_types as ritem_types
+    ritem_types.register_from_storage(storage)
     return tag_storage(storage, f'library:{os.path.basename(path)}', force=True)
 
 
@@ -410,7 +428,7 @@ def save_item_library(path: str, storage: dict, addresses=None) -> int:
     Returns the number of addresses written.
     """
     lib = library_entries(storage)
-    sections = {'item': {}, 'calibration': {}}
+    sections = {kind: {} for kind in LIBRARY_KINDS}
     for addr in sorted(lib):
         if addresses is not None and addr not in addresses:
             continue
@@ -421,17 +439,19 @@ def save_item_library(path: str, storage: dict, addresses=None) -> int:
             entries.append({'key': e['key'], 'value': _plain_value(e['value']), 'constraints': _plain_value(c)})
         entries.sort(key=lambda e: (e['key'], str(e['constraints'].get('valid_from'))))
         sections[kind][addr] = entries
-    n = len(sections['item']) + len(sections['calibration'])
+    n = sum(len(v) for v in sections.values())
     if is_sqlite_library(path):
-        out = dict(sections['item'])
-        out.update(sections['calibration'])
+        out = {}
+        for part in sections.values():
+            out.update(part)
         _write_sqlite_items(path, out)
         return n
     doc = {}
-    if sections['item'] or not sections['calibration']:
-        doc['items'] = sections['item']
-    if sections['calibration']:
-        doc['calibrations'] = sections['calibration']
+    for kind in LIBRARY_KINDS:
+        if sections[kind]:
+            doc[LIBRARY_SECTIONS[kind]] = sections[kind]
+    if not doc:
+        doc['items'] = {}
     tmp = path + '.tmp'
     # always LF line ends (files in git shared between operating systems)
     with open(tmp, 'w', encoding='utf-8', newline='\n') as f:

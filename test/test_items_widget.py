@@ -182,3 +182,28 @@ def test_flat_list(widget):
     assert tree_refs(w) == [(0, 'breakout_board_v01/BO-003'), (0, 'norlog_v02/N-012'), (0, 'ntc_sensor/0042')]
     w.flat.setChecked(False)
     assert [d for d, _r in tree_refs(w)] == [0, 1, 2]
+
+
+def test_form_of_a_data_type(widget):
+    from redvypr import item_types as it
+    w = widget
+    s_before = dict(items.ITEM_TYPES)
+    try:
+        defn = it.TypeDefinition(name='calypso_CMI1018', description='wind meter',
+                                 fields={'heading_offset': {'kind': 'quantity', 'unit': 'deg',
+                                                            'description': 'Mounting offset'}})
+        storage = {}
+        it.add_definition(storage, defn, valid_from=T0)
+        w.redvypr.set_metadata_from_dict(storage)
+        w.refresh()                                   # registers the type of the metadata
+        cls = items.get_item_type('calypso_CMI1018')
+        assert cls.ORIGIN == 'data'
+        w.redvypr.add_item(cls(id='0011', heading_offset=7.0), valid_from=T0)
+        w.refresh()
+        w.set_item(w.redvypr.get_item('calypso_CMI1018/0011'))
+        assert 'type defined as data' in w.title.text()
+        edit, _base = w.form_fields['heading_offset']
+        assert 'deg' in edit.placeholderText() and 'Mounting offset' in edit.toolTip()
+    finally:
+        items.ITEM_TYPES.clear()
+        items.ITEM_TYPES.update(s_before)
