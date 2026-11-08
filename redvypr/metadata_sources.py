@@ -388,12 +388,10 @@ def _write_sqlite_items(path: str, out: dict):
         con.close()
 
 
-def load_item_library(path: str, type_paths=None) -> dict:
+def read_library_storage(path: str) -> dict:
     """
-    Storage of an item library file, entries tagged 'library:<file name>'. Only
-    item addresses are taken. YAML (storage format {address: [entries]} or simple
-    format {address: {key: value}}) or an SQLite file (suffix .sqlite, .sqlite3,
-    .db; table redvypr_metadata as written by redvypr, e.g. an inventory database).
+    The library entries of a file (YAML or SQLite) as storage, without source tags and
+    without registering types (e.g. to change a file and write it again).
     """
     if is_sqlite_library(path):
         data = _read_sqlite_items(path)
@@ -412,11 +410,21 @@ def load_item_library(path: str, type_paths=None) -> dict:
                 joined.update(part)
             data = joined
     storage = redvypr_metadata.normalize_metadata(data)
-    storage = {a: e for a, (_k, e) in library_entries(storage).items()}
+    return {a: e for a, (_k, e) in library_entries(storage).items()}
+
+
+def load_item_library(path: str, type_paths=None) -> dict:
+    """
+    Storage of an item library file, entries tagged 'library:<file name>'. Only
+    item addresses are taken. YAML (storage format {address: [entries]} or simple
+    format {address: {key: value}}) or an SQLite file (suffix .sqlite, .sqlite3,
+    .db; table redvypr_metadata as written by redvypr, e.g. an inventory database).
+    """
+    storage = read_library_storage(path)
     # item types defined in the file: usable right away; types of its items not known yet
     # are searched in the directory of the file and in type_paths
     import redvypr.item_types as ritem_types
-    ritem_types.register_from_storage(storage)
+    ritem_types.register_from_storage(storage, source=path)
     ritem_types.resolve_types(storage, [os.path.dirname(os.path.abspath(path))] + list(type_paths or []))
     return tag_storage(storage, f'library:{os.path.basename(path)}', force=True)
 

@@ -69,6 +69,8 @@ KINDS = {
 _PYTHON_TYPES: typing.Dict[str, typing.Type[ritems.Item]] = {}
 # Names of the types registered from data
 DATA_TYPES: typing.Dict[str, 'TypeDefinition'] = {}
+# File a type definition was read from (library file or type directory), name -> path
+TYPE_SOURCES: typing.Dict[str, str] = {}
 
 
 class FieldDefinition(pydantic.BaseModel):
@@ -294,11 +296,16 @@ def build_model(defn: TypeDefinition, base: typing.Type[ritems.Item]) -> typing.
     return model
 
 
-def register_definitions(defs: typing.Dict[str, TypeDefinition]) -> typing.List[str]:
+def register_definitions(defs: typing.Dict[str, TypeDefinition],
+                         sources: typing.Optional[typing.Dict[str, str]] = None) -> typing.List[str]:
     """
     Builds and registers the models of definitions (bases first); a definition of a
-    Python type extends it. Returns the names registered; errors are logged.
+    Python type extends it. sources: name -> file the definition was read from.
+    Returns the names registered; errors are logged.
     """
+    for name, path in (sources or {}).items():
+        if name in defs and path:
+            TYPE_SOURCES[name] = path
     done = []
     pending = dict(defs)
     for _round in range(len(pending) + 1):
@@ -335,15 +342,18 @@ def register_definitions(defs: typing.Dict[str, TypeDefinition]) -> typing.List[
     return done
 
 
-def register_from_storage(storage: dict, at_time=None) -> typing.List[str]:
-    """Registers the type definitions of a storage (see register_definitions())."""
+def register_from_storage(storage: dict, at_time=None, source: typing.Optional[str] = None) -> typing.List[str]:
+    """Registers the type definitions of a storage (see register_definitions()); source: its file."""
     defs = definitions_from_storage(storage, at_time=at_time)
-    return register_definitions(defs) if defs else []
+    if not defs:
+        return []
+    return register_definitions(defs, sources={n: source for n in defs} if source else None)
 
 
 # --- lookup in type directories ---------------------------------------------------------
 
 _FILE_CACHE: typing.Dict[str, typing.Tuple[float, typing.Dict[str, TypeDefinition]]] = {}
+_FOUND_IN: typing.Dict[str, str] = {}
 TYPE_FILE_SUFFIXES = ('.yaml', '.yml')
 
 
@@ -406,6 +416,7 @@ def find_definitions(names, paths) -> typing.Dict[str, TypeDefinition]:
             for name, defn in definitions_in_file(path).items():
                 if name in missing and name not in found:
                     found[name] = defn
+                    _FOUND_IN[name] = path
         bases = {d.base for d in found.values()
                  if d.base and d.base not in found and d.base not in ritems.ITEM_TYPES}
         if not bases - wanted:
@@ -429,11 +440,74 @@ def resolve_types(storage: dict, paths) -> typing.List[str]:
     if not needed or not paths:
         return []
     defs = find_definitions(needed, paths)
-    registered = register_definitions(defs) if defs else []
+    registered = register_definitions(defs, sources={n: _FOUND_IN.get(n) for n in defs}) if defs else []
     unknown = sorted(t for t in needed if t not in ritems.ITEM_TYPES)
     if unknown:
         logger.info(f'no definition found for the item types {unknown} (generic Item)')
     return registered
+
+
+# --- editing (type editor of the Items window) ---------------------------------------------
+
+def write_definition(path: str, defn: TypeDefinition, valid_from=None) -> str:
+    """
+    Writes a definition into a library file (new values from valid_from, default now;
+    the history stays). The other contents of the file (other types, items,
+    calibrations) are kept; a missing file is created. Returns the path.
+    """
+    import os as _os
+    import redvypr.metadata_sources as ms
+    storage = {}
+    if _os.path.exists(path):
+        storage = ms.read_library_storage(path)
+    add_definition(storage, defn, valid_from=valid_from)
+    ms.save_item_library(path, storage)
+    _FILE_CACHE.pop(_os.path.abspath(path), None)
+    _FILE_CACHE.pop(path, None)
+    return path
+
+
+def python_fields(cls: typing.Type[ritems.Item]) -> typing.Dict[str, str]:
+    """Fields of a model with their description (for showing inherited fields)."""
+    return {k: (f.description or '') for k, f in cls.model_fields.items()}
+
+
+def _kind_of_value(value) -> typing.Tuple[str, typing.Optional[str]]:
+    """(kind, unit) of a field value of an item."""
+    if isinstance(value, bool):
+        return 'bool', None
+    if isinstance(value, int):
+        return 'int', None
+    if isinstance(value, float):
+        return 'float', None
+    if isinstance(value, ritems.Quantity):
+        return 'quantity', value.unit or None
+    if isinstance(value, dict) and isinstance(value.get('value'), (int, float)) and 'unit' in value:
+        return 'quantity', value.get('unit') or None
+    if isinstance(value, dict):
+        return 'dict', None
+    if isinstance(value, list):
+        return 'list', None
+    return 'str', None
+
+
+def definition_from_item(item: ritems.Item, name: typing.Optional[str] = None) -> TypeDefinition:
+    """
+    A definition proposed from an item: its additional fields (not in its model) become
+    fields of the type (kind and unit from the values), manufacturer and mpn defaults.
+    """
+    fields = {}
+    for key, value in (item.model_extra or {}).items():
+        kind, unit = _kind_of_value(value)
+        fields[key] = FieldDefinition(kind=kind, unit=unit)
+    defaults = {k: getattr(item, k) for k in ('manufacturer', 'mpn') if getattr(item, k, None)}
+    return TypeDefinition(name=name or item.itemtype, description=item.description, fields=fields,
+                          defaults=defaults)
+
+
+def definition_of(name: str) -> typing.Optional[TypeDefinition]:
+    """The data definition of a registered type, None for a type defined only in Python."""
+    return DATA_TYPES.get(name)
 
 
 def type_origin(name: str) -> str:

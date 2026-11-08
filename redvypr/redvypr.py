@@ -1608,6 +1608,42 @@ class Redvypr(QtCore.QObject):
         names = ritem_types.register_from_storage(storage)
         return names + ritem_types.resolve_types(storage, self.item_type_search_paths())
 
+    def item_type_files(self) -> list:
+        """
+        Files where item type definitions can be saved: the files the known definitions
+        come from, YAML files with a section item_types in the search paths, and the
+        loaded libraries holding types. Sorted, without duplicates.
+        """
+        import redvypr.item_types as ritem_types
+        files = set(p for n, p in ritem_types.TYPE_SOURCES.items() if p and n in ritem_types.DATA_TYPES)
+        for f in ritem_types.type_files(self.item_type_search_paths()):
+            if ritem_types.definitions_in_file(f):
+                files.add(f)
+        for lib in self.item_libraries:
+            if not redvypr_metadata_sources.is_sqlite_library(lib) and os.path.exists(lib):
+                if ritem_types.definitions_in_file(os.path.abspath(lib)):
+                    files.add(lib)
+        return sorted(os.path.abspath(f) for f in files)
+
+    def save_item_type(self, defn, path: str, valid_from=None) -> str:
+        """
+        Saves an item type definition (redvypr.item_types.TypeDefinition) into a file
+        (new values from valid_from, default now; other contents of the file stay) and
+        registers it. A loaded library is loaded again, so the metadata of this instance
+        has the new definition as well. Returns the path.
+        """
+        import redvypr.item_types as ritem_types
+        # check first: the model must be buildable
+        base = ritem_types._python_type(defn.name) or (
+            redvypr_items.ITEM_TYPES.get(defn.base) if defn.base else None) or redvypr_items.Item
+        ritem_types.build_model(defn, base)
+        ritem_types.write_definition(path, defn, valid_from=valid_from)
+        ritem_types.register_definitions({defn.name: defn}, sources={defn.name: os.path.abspath(path)})
+        loaded = [lib for lib in self.item_libraries if os.path.abspath(lib) == os.path.abspath(path)]
+        if loaded:
+            self.load_item_library(loaded[0])
+        return path
+
     def save_item_libraries(self) -> dict:
         """Saves every loaded library file (save_item_library()); {path: number of addresses}."""
         return {path: self.save_item_library(path) for path in list(self.item_libraries)}

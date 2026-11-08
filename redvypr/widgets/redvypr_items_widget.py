@@ -211,6 +211,10 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
                                      'it was loaded from, new ones into the first file of their kind')
         self.btn_save_as = QtWidgets.QPushButton('Save library as ...')
         self.btn_refresh = QtWidgets.QPushButton('Refresh')
+        self.btn_types = QtWidgets.QPushButton('Types ...')
+        self.btn_types.setToolTip('Editor of the item types (types defined as data, YAML file item_types)')
+        self.btn_types.clicked.connect(lambda: self.open_types())
+        self.types_widget = None
         self.btn_new.clicked.connect(lambda: self.new_item())
         self.btn_copy.clicked.connect(lambda: self.new_item(copy=True))
         self.btn_move.clicked.connect(self.move_item)
@@ -221,7 +225,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.btn_refresh.clicked.connect(self.refresh)
         buttons = QtWidgets.QGridLayout()
         for i, b in enumerate((self.btn_new, self.btn_copy, self.btn_move, self.btn_delete,
-                               self.btn_load, self.btn_save_lib, self.btn_save_as, self.btn_refresh)):
+                               self.btn_load, self.btn_save_lib, self.btn_save_as, self.btn_refresh,
+                               self.btn_types)):
             buttons.addWidget(b, i // 4, i % 4)
 
         left = QtWidgets.QWidget()
@@ -371,6 +376,28 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         w = self.tree.currentItem()
         ref = w.data(0, ROLE_REF) if w is not None else None
         self.set_item(self.redvypr.get_item(ref, at_time=self.time()) if ref else None)
+        if self.types_widget is not None:
+            self.types_widget.set_item(self.redvypr.get_item(ref, at_time=self.time()) if ref else None)
+
+    def open_types(self):
+        """Opens the editor of the item types (the selected item for "From item")."""
+        from redvypr.widgets.redvypr_item_types_widget import RedvyprItemTypesWidget
+        item = self.redvypr.get_item(self.current_ref, at_time=self.time()) if self.current_ref else None
+        if self.types_widget is None:
+            self.types_widget = RedvyprItemTypesWidget(redvypr_instance=self.redvypr, item=item)
+            self.types_widget.types_changed.connect(self._types_changed)
+            self.types_widget.resize(1100, 650)
+        else:
+            self.types_widget.set_item(item)
+            self.types_widget.refresh()
+        self.types_widget.show()
+        self.types_widget.raise_()
+        return self.types_widget
+
+    def _types_changed(self):
+        self.refresh()
+        if self.current_ref:
+            self.set_item(self.redvypr.get_item(self.current_ref, at_time=self.time()))
 
     # --- form ---
     def set_item(self, item: typing.Optional[ritems.Item]):

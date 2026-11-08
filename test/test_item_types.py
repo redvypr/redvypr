@@ -29,7 +29,8 @@ def clean_registry():
     yield
     items.ITEM_TYPES.clear()
     items.ITEM_TYPES.update(before)
-    it.DATA_TYPES.clear()
+    for table in (it.DATA_TYPES, it.TYPE_SOURCES, it._FOUND_IN, it._FILE_CACHE):
+        table.clear()
 
 
 def test_short_form_library_and_model(tmp_path):

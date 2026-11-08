@@ -103,8 +103,8 @@ Item types are named **per model**, in English (``calypso_CMI1018``,
 Item types as data
 ~~~~~~~~~~~~~~~~~~
 
-Status 2026-11-08: implemented (``redvypr.item_types``); a type editor in the
-GUI is still open.
+Status 2026-11-08: implemented (``redvypr.item_types``), with a type editor in
+the GUI (Items window, "Types ...").
 
 A type can be defined without Python, as data like the items: at
 ``@i:'itemtype' and d:'<type>'`` with one key per part of the definition,
@@ -149,6 +149,18 @@ written back). This is also done when the Items window is refreshed
 directory tree, one file per model (e.g. ``types/calypso/CMI1018.yaml``),
 growing to many types; later possibly a repository of its own shared by
 several inventories, type names unique by ``<manufacturer>_<model>``.
+
+**Type editor** (Items window, button "Types ..."): list of all types with
+origin (Python, data, Python + data) and file; form of a definition
+(description, base, revision, fields as a table with kind, unit,
+description, default, choices; defaults; renamed fields; the fields
+inherited from a Python type or the base read-only). "From item" proposes a
+type from the selected item (its additional fields with kind and unit from
+their values). "Save type" writes the definition into a YAML file (default:
+the file it came from, else ``item_types.yaml`` next to the first item
+library) with new values from "Valid from" (history and other contents of
+the file stay, ``item_types.write_definition()``) and registers it; a loaded
+library file is loaded again (``Redvypr.save_item_type()``).
 
 Revisions of item types
 ~~~~~~~~~~~~~~~~~~~~~~~

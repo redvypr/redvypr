@@ -17,6 +17,10 @@ redvypr changelog
   of unknown types of loaded items are searched in the directory of the library and in the
   configuration `item_type_paths` (YAML files with a section `item_types`, with subdirectories,
   read again only after a change; `item_types.resolve_types()`, `Redvypr.resolve_item_types()`).
+  Type editor (Items window, "Types ..."): list of the types with origin and file, form of a
+  definition (fields table with kind, unit, description, default, choices; defaults; renamed;
+  inherited fields shown), new type, copy, proposal from the selected item, saved into a YAML file
+  with history (`Redvypr.save_item_type()`, `item_types.write_definition()`).
 - Items in the metadata (design note doc/source/design_items.rst, step 1): new module
   `redvypr.items` for physical things (loggers, boards, sensors, ...) and templates. An item lives
   at `@i:'item' and d:'<itemtype>' and di:'<id>'`, one metadata key per field with its own validity
