@@ -355,7 +355,7 @@ choice "converted with items" in the plots.
 Sensors, calibrations and the sensor manager
 --------------------------------------------
 
-Status 2026-11-10: concept; steps 1 and 2 implemented. No backward compatibility
+Status 2026-11-10: steps 1 to 3 implemented, step 4 open. No backward compatibility
 needed (only one user, no stored data with the old formats).
 
 **A sensor is an item.** The sensors of the sensor manager (``BaseSensor``
@@ -407,12 +407,15 @@ attachments of a sensor                Items window, for all items
 save to / load from a database         SQLite libraries, metadata in the data
                                        databases
 calibration table, calibration import  Items window: area "Calibrations" of the
-                                       selected item, "Import calibration ..."
-plots, reports, autocalibration        stays a calibration tool, reading and
-                                       writing the calibrations of the metadata
-                                       (``calibrations.yaml``) instead of own
-                                       lists
+                                       selected item, "Import calibration ...";
+                                       the calibration lists of the manager stay
+                                       as working lists (database, copy/paste),
+                                       "apply" puts them into the metadata
 =====================================  ========================================
+
+(Plots, reports and the autocalibration are not part of the sensor manager
+but of the calibration device ``calibration.py``; it creates calibrations
+that are put into the metadata the same way.)
 
 Steps:
 
@@ -436,8 +439,18 @@ Steps:
    library (configuration ``item_attachments_path``), listed in the field
    ``attachments`` (file name, description, size, sha256, time added; not
    edited in the form); open, open folder, remove (with the file).
-3. Sensor manager: the sensor table opens the Items window; plots, reports
-   and autocalibration work on the calibrations of the metadata.
+3. Sensor manager (done 2026-11-10): a fixed tab "Sensors (items)" lists the
+   sensors of the metadata (parent/slot, number of calibrations), opens the
+   Items window and imports sensor files (YAML, as the sensor lists) into
+   the metadata; no new sensor lists (lists of older configurations are
+   still shown, to be applied once). The calibration lists stay as working
+   lists; "apply" uses ``item_calibration.import_calibrations()`` (missing
+   sensor items are created), loading from the metadata uses
+   ``calibrations_from_metadata()``. Conversion of heat flux:
+   ``HeatflowClassicCalibration.raw2data()`` = voltage [mV] x
+   ``calibration_HF_SI`` [W m-2 per mV]; the profile channel names its raw
+   unit (``raw_unit: V``), converted into the input unit of the calibration
+   by SI prefix (``item_calibration.unit_factor()``, V -> mV x1000).
 4. Convert existing sensor lists and calibration files once into libraries.
 
 Performance: item index (planned)

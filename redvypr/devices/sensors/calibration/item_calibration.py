@@ -155,6 +155,26 @@ def input_scale(found: dict, datakey: str) -> typing.Tuple[float, str, list]:
     return 1.0, '', []
 
 
+_PREFIXES = {'': 1.0, 'k': 1e3, 'm': 1e-3, 'u': 1e-6, '\u00b5': 1e-6, 'n': 1e-9}
+
+
+def unit_factor(from_unit: str, to_unit: str) -> typing.Optional[float]:
+    """
+    Factor converting a value in from_unit into to_unit if they differ by an SI prefix only
+    (V -> mV: 1000), 1 if equal or one is empty, None if they do not fit.
+    """
+    a, b = (from_unit or '').strip(), (to_unit or '').strip()
+    if not a or not b or a == b or 'NA' in (a, b):
+        return 1.0
+    for pa, fa in _PREFIXES.items():
+        if not a.startswith(pa) or len(a) <= len(pa):
+            continue
+        for pb, fb in _PREFIXES.items():
+            if b.startswith(pb) and len(b) > len(pb) and a[len(pa):] == b[len(pb):]:
+                return fa / fb
+    return None
+
+
 def apply_calibration(storage: dict, address, raw, at_time=None, calibrations=None,
                       found: typing.Optional[dict] = None) -> CalibrationResult:
     """
@@ -180,6 +200,16 @@ def apply_calibration(storage: dict, address, raw, at_time=None, calibrations=No
         return res
     res.calibration = cal
     res.unit = getattr(cal, 'unit', '') or ''
+    # raw unit of the channel (profile) -> input unit of the calibration (e.g. V -> mV)
+    raw_unit = channel_props(found, datakey).get('raw_unit') or ''
+    factor = unit_factor(raw_unit, getattr(cal, 'unit_input', '') or '')
+    if factor is None:
+        res.problems.append(f'raw unit {raw_unit} does not fit the input unit {cal.unit_input} of the calibration')
+        return res
+    if factor != 1.0:
+        res.scale *= factor
+        res.scale_source = (res.scale_source + ', ' if res.scale_source else '') + \
+            f'{raw_unit} -> {cal.unit_input} x{factor:g}'
     x = np.asarray(raw, dtype=float) * res.scale
     try:
         value = cal.raw2data(x)

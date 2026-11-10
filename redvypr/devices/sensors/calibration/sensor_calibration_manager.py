@@ -34,6 +34,7 @@ from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.devices.db.db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget
 from redvypr.devices.db.db_engines import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
 from redvypr.devices.sensors.calibration.calibration_models import CalibrationGeneric
+from redvypr.devices.sensors.calibration import item_calibration
 
 
 _logo_file = redvypr_files.logo_file
@@ -58,8 +59,10 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
     #calibration_lists: dict = pydantic.Field(default={'Calibrations':[]})
     calibration_lists: typing.Dict[str, List] = pydantic.Field(
         default_factory=lambda: {'Calibrations': []})
+    # Sensors are items of the metadata (Items window); lists of older configurations are shown
+    # so that they can be applied (put into the metadata) once
     sensor_lists: typing.Dict[str, List[T]] = pydantic.Field(
-        default_factory=lambda: {'Sensors': []})
+        default_factory=dict, description='Sensor lists of older configurations (sensors are items now)')
 
     attachment_base_path: Path = pydantic.Field(
         default=Path("./sensordata/attachments"),
@@ -146,11 +149,7 @@ class Device(RedvyprDevice):
             logger.warning(f"List '{list_name}' does not exist.")
 
     def create_metadict_from_sensor_list(self, list_name: str) -> dict:
-        """
-        Metadata of the sensors of a list for redvypr.set_metadata_from_dict(): sensors with a
-        serial number as items (one key per field, see redvypr.items), others in the format of
-        older versions (key 'sensor').
-        """
+        """Metadata of the sensors of a list for redvypr.set_metadata_from_dict() (items, see redvypr.items)."""
         funcname = __name__ + '.create_metadatapacket_from_sensor_list():'
         logger.debug(funcname)
         sensor_dict_meta = {}
@@ -159,11 +158,27 @@ class Device(RedvyprDevice):
         logger.debug(funcname + 'Metadata packet created')
         return sensor_dict_meta
 
+    def import_sensors_to_metadata(self, file_path: str) -> list:
+        """
+        Reads sensors from a YAML file (one or several documents, as the sensor lists) and puts
+        them into the metadata as items. Returns the sensors.
+        """
+        sensors = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for data in yaml.safe_load_all(f):
+                if data is None:
+                    continue
+                for d in (data if isinstance(data, list) else [data]):
+                    sensors.append(SensorFactory.create(d))
+        metadict = {}
+        for sensor in sensors:
+            metadict.update(sensor_metadict(sensor))
+        if metadict:
+            self.redvypr.set_metadata_from_dict(metadata=metadict)
+        return sensors
+
     def create_sensor_list_from_metadata(self, list_name='metadata') -> list:
-        """
-        The list list_name with the sensors in the metadata of redvypr: items of the sensor types
-        and sensors stored by older versions (key 'sensor').
-        """
+        """The list list_name with the sensors (items of the sensor types) in the metadata of redvypr."""
         funcname = __name__ + '.create_sensor_list_from_metadata():'
         logger.debug(funcname)
         storage = self.redvypr._copy_metadata() if self.redvypr is not None else {}
@@ -249,15 +264,9 @@ class Device(RedvyprDevice):
         """
         funcname = __name__ + '.create_metadatapacket_from_calibration_list():'
         logger.debug(funcname)
-        calibrations = self.calibration_lists[list_name]
-
         calibration_dict_meta = {}
-        for calibration in calibrations:
-            raddress = calibration.create_redvypr_address()
-            address_str = raddress.to_address_string()
-            calibration_dict = calibration.model_dump()
-            calibration_dict_meta[address_str] = {'calibration':calibration_dict}
-
+        for calibration in self.calibration_lists[list_name]:
+            calibration_dict_meta.update(item_calibration.calibration_metadict(calibration))
         logger.debug(funcname + 'Metadata packet created')
         return calibration_dict_meta
 
@@ -272,26 +281,16 @@ class Device(RedvyprDevice):
         -------
 
         """
-        funcname = __name__ + '.create_metadatapacket_from_calibration_list():'
-        logger.debug(funcname)
-
-        metadata = redvypr.get_metadata()
-        self.calibration_lists[list_name] = []
-        for maddr,mdata in metadata.items():
-            print(mdata)
-            if 'calibration' in mdata.keys():
-                print("Found calibration")
-                calibration_data = mdata["calibration"]
-                print(f"Calibration data:{calibration_data}")
-                calibration = CalibrationFactory.create(calibration_data)
-                self.calibration_lists[list_name].append(calibration)
-
-        print(f"{self.calibration_lists=}")
+        storage = self.redvypr._copy_metadata() if self.redvypr is not None else {}
+        self.calibration_lists[list_name] = item_calibration.calibrations_from_metadata(storage)
         return self.calibration_lists[list_name]
 
-    def set_metadata_from_calibration_list(self, list_name: str):
-        metadict = self.create_metadict_from_calibration_list(list_name=list_name)
-        self.redvypr.set_metadata_from_dict(metadata=metadict)
+    def set_metadata_from_calibration_list(self, list_name: str) -> list:
+        """
+        Puts the calibrations of a list into the metadata; missing sensor items are created
+        (item_calibration.import_calibrations()). Returns its report.
+        """
+        return item_calibration.import_calibrations(self.redvypr, list(self.calibration_lists[list_name]))
 
     def load_calibrations_from_db(self, databaseconfig=None, list_name=None) -> dict:
         print("Creating db from config", databaseconfig)
@@ -1482,6 +1481,82 @@ class CalibrationManageWidget(QtWidgets.QWidget):
             )
 
 
+class SensorsItemsWidget(QtWidgets.QWidget):
+    """
+    Sensors are items of the redvypr metadata: they are edited in the Items window (with their
+    calibrations and attachments). This tab lists them and imports sensor files.
+    """
+
+    def __init__(self, device, redvypr_instance, parent=None):
+        super().__init__(parent)
+        self.device = device
+        self.redvypr = redvypr_instance
+        self.items_window = None
+        info = QtWidgets.QLabel(
+            'Sensors are items of the metadata: edit them, their calibrations and attachments in the '
+            'Items window. "Save libraries" there stores them (e.g. inventory_*.yaml, calibrations.yaml).')
+        info.setWordWrap(True)
+        self.btn_items = QtWidgets.QPushButton('Open Items window')
+        self.btn_import = QtWidgets.QPushButton('Import sensors (YAML) ...')
+        self.btn_refresh = QtWidgets.QPushButton('Refresh')
+        self.btn_items.clicked.connect(lambda: self.open_items_window())
+        self.btn_import.clicked.connect(lambda: self.import_sensors())
+        self.btn_refresh.clicked.connect(lambda: self.refresh())
+        self.table = QtWidgets.QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(['Sensor', 'Name', 'Series', 'Parent / slot', 'Calibrations'])
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.status = QtWidgets.QLabel('')
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.addWidget(info)
+        bl = QtWidgets.QHBoxLayout()
+        for b in (self.btn_items, self.btn_import, self.btn_refresh):
+            bl.addWidget(b)
+        bl.addStretch(1)
+        lay.addLayout(bl)
+        lay.addWidget(self.table, 1)
+        lay.addWidget(self.status)
+        self.refresh()
+
+    def refresh(self):
+        storage = self.redvypr._copy_metadata() if self.redvypr is not None else {}
+        sensors = sensors_from_metadata(storage)
+        cals = item_calibration.calibrations_from_metadata(storage)
+        self.table.setRowCount(len(sensors))
+        for row, s in enumerate(sensors):
+            n = len(item_calibration.calibrations_of_item(storage, s, calibrations=cals))
+            place = f'{s.parent or ""}' + (f' / {s.slot}' if s.slot else '')
+            for col, text in enumerate((s.ref, s.name or '', getattr(s, 'series', '') or '', place, str(n))):
+                self.table.setItem(row, col, QtWidgets.QTableWidgetItem(text))
+        self.table.resizeColumnsToContents()
+        return sensors
+
+    def open_items_window(self):
+        from redvypr.widgets.redvypr_items_widget import RedvyprItemsWidget
+        if self.items_window is None:
+            self.items_window = RedvyprItemsWidget(redvypr_instance=self.redvypr)
+            self.items_window.resize(1300, 750)
+        self.items_window.refresh()
+        self.items_window.show()
+        self.items_window.raise_()
+        return self.items_window
+
+    def import_sensors(self, path=None):
+        if not path:
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Import sensors', '', 'YAML (*.yaml *.yml)')
+        if not path:
+            return None
+        try:
+            sensors = self.device.import_sensors_to_metadata(path)
+        except Exception as e:
+            self.status.setText(f'not imported: {e}')
+            return None
+        self.status.setText(f'{len(sensors)} sensor(s) imported into the metadata; "Save libraries" in the '
+                            'Items window stores them')
+        self.refresh()
+        return sensors
+
+
 class RedvyprDeviceWidget(QtWidgets.QWidget):
     def __init__(self, *args, device=None, redvypr=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1525,10 +1600,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         action_cal.setShortcut(QtGui.QKeySequence("Ctrl+L"))
         action_cal.triggered.connect(lambda: self.create_list_dialog("Calibration"))
 
-        # Neue Sensorliste
-        action_sens = self.add_menu.addAction("New Sensor List")
-        action_sens.setShortcut(QtGui.QKeySequence("Ctrl+Shift+S"))
-        action_sens.triggered.connect(lambda: self.create_list_dialog("Sensor"))
+        # Sensors are items (fixed tab "Sensors (items)"); no new sensor lists
         self.add_button.setMenu(self.add_menu)
         self.add_button.setPopupMode(
             QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -1546,6 +1618,11 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
 
     def _load_existing_data(self):
         """Initialisiert die Tabs aus dem Device-Backend."""
+        self.sensors_widget = SensorsItemsWidget(self.device, self.redvypr if self.redvypr is not None
+                                                 else getattr(self.device, 'redvypr', None))
+        self.sensors_widget.setProperty("list_type", "Items")
+        self.tabs.addTab(self.sensors_widget, "📡 Sensors (items)")
+        self.tabs.tabBar().setTabButton(0, QtWidgets.QTabBar.ButtonPosition.RightSide, None)
         if hasattr(self.device, 'calibration_lists'):
             for name in self.device.calibration_lists.keys():
                 self.add_tab(name, "Calibration")
@@ -1596,6 +1673,8 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         widget = self.tabs.widget(index)
         list_type = widget.property("list_type")
         name = widget.property("internal_name")
+        if list_type == "Items":
+            return
 
         reply = QtWidgets.QMessageBox.question(
             self, "Confirm Delete",

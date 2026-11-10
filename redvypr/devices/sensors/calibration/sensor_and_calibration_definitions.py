@@ -286,6 +286,21 @@ class HeatflowClassicCalibration(BaseModel):
         return HeatflowClassicSensor.ITEMTYPE
 
     @property
+    def unit(self):
+        return 'W m-2'
+
+    @property
+    def unit_input(self):
+        """calibration_HF_SI is in W m-2 per mV."""
+        return 'mV'
+
+    def raw2data(self, data):
+        """Heat flux [W m-2] of a thermopile voltage [mV]: voltage * calibration_HF_SI."""
+        import numpy as np
+        coeff = self.calibration_HF_SI if self.calibration_HF_SI is not None else np.nan
+        return np.asarray(data, dtype=float) * coeff
+
+    @property
     def date(self):
         return self.calibration_date
 

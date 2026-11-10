@@ -31,6 +31,9 @@ class ChannelCal:
     scale_ref: tuple = ()
     # slot of the item measured by the channel, e.g. a terminal 'J2.3-4' (redvypr.items)
     slot: str = ""
+    # unit of the raw value (after scale), e.g. 'V': converted into the input unit of a sensor
+    # calibration (e.g. mV of a heat flux calibration) when the data are converted with the items
+    raw_unit: str = ""
 
     def to_dict(self):
         d = {'cal': self.kind}
@@ -42,6 +45,8 @@ class ChannelCal:
             d['scale_ref'] = list(self.scale_ref)
         if self.slot:
             d['slot'] = self.slot
+        if self.raw_unit:
+            d['raw_unit'] = self.raw_unit
         if self.hint:
             d['hint'] = self.hint
         return d
@@ -52,7 +57,8 @@ class ChannelCal:
         ref = d.get('scale_ref') or ()
         return cls(kind=str(d.get('cal', d.get('kind', 'poly'))), unit=str(d.get('unit', '')),
                    scale=float(d.get('scale', 1.0)), hint=str(d.get('hint', '')),
-                   scale_ref=tuple(ref) if len(ref) == 2 else (), slot=str(d.get('slot', '')))
+                   scale_ref=tuple(ref) if len(ref) == 2 else (), slot=str(d.get('slot', '')),
+                   raw_unit=str(d.get('raw_unit', '')))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -94,8 +100,10 @@ _add(Setup(
     text=("on=1,sps=5,filter=sinc3,interval=10000;hf0,0,1,128,INT,0,-,-,10,1;hf1,2,3,128,INT,0,-,-,10,3;"
           "ntc0,4,6,1,REF1,100,4,-,20;ntc1,5,6,1,REF1,100,5,-,20"),
     channels={
-        "hf0": ChannelCal("poly", "W/m2", hint="linear: c1 = 1 / sensitivity [W/m2 per V]", slot="J2.1-2"),
-        "hf1": ChannelCal("poly", "W/m2", hint="linear: c1 = 1 / sensitivity [W/m2 per V]", slot="J2.5-6"),
+        "hf0": ChannelCal("poly", "W/m2", hint="linear: c1 = 1 / sensitivity [W/m2 per V]", slot="J2.1-2",
+                          raw_unit="V"),
+        "hf1": ChannelCal("poly", "W/m2", hint="linear: c1 = 1 / sensitivity [W/m2 per V]", slot="J2.5-6",
+                          raw_unit="V"),
         "ntc0": ChannelCal("ntc", "degC", scale=10000.0, scale_ref=("board", "R1"), slot="J2.3-4",
                            hint="NTC, scale = R_ref = R1 of the board (nominal 10000)"),
         "ntc1": ChannelCal("ntc", "degC", scale=10000.0, scale_ref=("board", "R1"), slot="J2.7-8",

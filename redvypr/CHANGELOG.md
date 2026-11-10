@@ -20,6 +20,12 @@ redvypr changelog
   "Remove calibration"; new calibrations saved into `calibrations.yaml` next to the first library)
   and "Attachments" (files in `attachments/<itemtype>/<id>/<uuid>/`, configuration
   `item_attachments_path`; module `redvypr.item_attachments`).
+  Step 3: sensor manager with a fixed tab "Sensors (items)" (sensors of the metadata, open the
+  Items window, import sensor files into the metadata), no new sensor lists; applying a
+  calibration list creates missing sensor items, loading from the metadata fixed.
+  `HeatflowClassicCalibration.raw2data()` (mV x `calibration_HF_SI`, W m-2); profile channels
+  name their raw unit (`raw_unit`, hf0/hf1: V), converted into the input unit of the calibration
+  by SI prefix (`item_calibration.unit_factor()`).
 - Item types as data (`redvypr.item_types`, design note section "Item types as data"): a type
   defined in the metadata at `@i:'itemtype' and d:'<type>'` / in the section `item_types` of a
   library file (short form `<type>: {description, base, revision, fields, defaults, renamed}`)
