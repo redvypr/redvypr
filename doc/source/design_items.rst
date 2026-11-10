@@ -554,17 +554,21 @@ Storage and exchange
   ``item_git_commit()``, ``item_git_pull()``, ``item_git_push()``). A pull
   needs committed files (new, untracked files do not stop it), fetches and
   fast-forwards or merges; a conflict stops it with the files named and the
-  repository as before (dulwich merges changes of both sides in the same
-  file only with the package ``merge3``; without it such a pull stops as
-  well); after a pull the libraries of the repository are loaded again
+  repository as before (dulwich merges changes of both sides at different
+  places of the same file with the package ``merge3``, a dependency); after a pull the libraries of the repository are loaded again
   (``reload_item_library()``: entries deleted in the files disappear). A push
   is refused if the remote has new commits. Credentials with dulwich: HTTPS
   with user name and personal access token, kept in the system key store
   (``keyring``, service ``redvypr-git:<host>``), asked for by a callback if
   missing or rejected and stored when accepted; the git program uses its
   own. Library files are written only if their text changed (line ends not
-  counted, a checkout on Windows may make them CRLF). Planned: git bundles
-  for field computers without network (one file with the
+  counted, a checkout on Windows may make them CRLF). Items window "Git
+  ...": the repositories of the item files (branch, git program or dulwich,
+  number of changed files, commits to push and to pull as of the last
+  fetch), the changed files of the selected one, commit message and
+  "Commit", "Refresh", "Fetch", "Pull" (the libraries are loaded again, the
+  tree is refreshed), "Push"; a dialog asks for user name and access token
+  (dulwich). Planned: git bundles for field computers without network (one file with the
   commits, carried there and back), a "Git" area in the Items window. A ZIP
   of the libraries stays an option for read-only copies (e.g. the state of
   the inventory with a measurement campaign).

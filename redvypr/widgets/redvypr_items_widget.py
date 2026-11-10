@@ -223,6 +223,10 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.btn_types.setToolTip('Editor of the item types (types defined as data, YAML file item_types)')
         self.btn_types.clicked.connect(lambda: self.open_types())
         self.types_widget = None
+        self.btn_git = QtWidgets.QPushButton('Git ...')
+        self.btn_git.setToolTip('Changes of the item files in git: commit, pull, push')
+        self.btn_git.clicked.connect(lambda: self.open_git())
+        self.git_widget = None
         self.btn_new.clicked.connect(lambda: self.new_item())
         self.btn_copy.clicked.connect(lambda: self.new_item(copy=True))
         self.btn_move.clicked.connect(self.move_item)
@@ -234,7 +238,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         buttons = QtWidgets.QGridLayout()
         for i, b in enumerate((self.btn_new, self.btn_copy, self.btn_move, self.btn_delete,
                                self.btn_load, self.btn_load_dir, self.btn_save_lib, self.btn_save_as,
-                               self.btn_refresh, self.btn_types)):
+                               self.btn_refresh, self.btn_types, self.btn_git)):
             buttons.addWidget(b, i // 4, i % 4)
 
         left = QtWidgets.QWidget()
@@ -459,6 +463,19 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.types_widget.show()
         self.types_widget.raise_()
         return self.types_widget
+
+    def open_git(self, prefer=None):
+        """Opens the git window of the item libraries (status, commit, pull, push)."""
+        from redvypr.widgets.redvypr_item_git_widget import RedvyprItemGitWidget
+        if self.git_widget is None:
+            self.git_widget = RedvyprItemGitWidget(redvypr_instance=self.redvypr, prefer=prefer)
+            self.git_widget.libraries_changed.connect(self._types_changed)
+            self.git_widget.resize(900, 600)
+        else:
+            self.git_widget.refresh()
+        self.git_widget.show()
+        self.git_widget.raise_()
+        return self.git_widget
 
     def _types_changed(self):
         self.refresh()

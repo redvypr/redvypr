@@ -32,8 +32,11 @@ redvypr changelog
   committed files, stops at conflicts without changes and loads the libraries again
   (`reload_item_library()`); a push is refused if the remote is ahead; with dulwich the HTTPS
   access token is kept in the system key store (`keyring`). New dependencies `dulwich` and
-  `keyring`, so `pip install redvypr` works without git. Library files are written only if their
-  text changed (line ends not counted).
+  `keyring` and `merge3` (dulwich merges changes at different places of one file), so
+  `pip install redvypr` works without git. Library files are written only if their text changed
+  (line ends not counted). Items window "Git ...": repositories of the item files with their
+  changes, commit, refresh, fetch, pull (libraries loaded again), push, dialog for user name and
+  access token.
 - Directory libraries: an item library can be a directory with one YAML file per item, item type
   and calibration (`items/<type>/<id>.yaml`, `item_types/<name>.yaml`,
   `calibrations/<sensor model>/<sn>/<date>_<uuid8>.yaml`, marker `redvypr_library.yaml`); saving

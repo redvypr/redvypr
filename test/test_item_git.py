@@ -233,3 +233,25 @@ def test_redvypr_pull_reloads_and_push(tmp_path, backend):
                     valid_from='2026-11-07T00:00:00+00:00')
     res = r_home.item_git_pull(prefer=backend)
     assert isinstance(list(res.values())[0], ig.GitError) and 'commit first' in str(list(res.values())[0])
+
+
+@pytest.mark.parametrize('backend', BACKENDS)
+def test_merge_of_one_file_changed_at_two_places(tmp_path, backend):
+    # a single file library: home changes G1 (first item), the field adds an item at the end
+    home, field = two_computers(tmp_path)
+    bh, bf = ig.backend_for(home, prefer=backend), ig.backend_for(field, prefer=backend)
+    s = ms.read_library_storage(str(home / 'inventory.yaml'))
+    items.add_item(s, items.Item(itemtype='gadget', id='G1', name='home'), valid_from='2026-11-05T00:00:00+00:00')
+    ms.save_item_library(str(home / 'inventory.yaml'), s)
+    bh.commit([home / 'inventory.yaml'], 'home: G1')
+    bh.push()
+    s = ms.read_library_storage(str(field / 'inventory.yaml'))
+    items.add_item(s, items.Item(itemtype='gadget', id='Z9', name='field'), valid_from=T0)
+    ms.save_item_library(str(field / 'inventory.yaml'), s)
+    bf.commit([field / 'inventory.yaml'], 'field: Z9')
+    res = bf.pull()
+    assert res.action == 'merged'
+    merged = ms.read_library_storage(str(field / 'inventory.yaml'))
+    assert items.get_item(merged, 'gadget/G1', at_time='2026-11-10T00:00:00+00:00').name == 'home'
+    assert items.get_item(merged, 'gadget/Z9', at_time='2026-11-10T00:00:00+00:00') is not None
+    assert '<<<<' not in (field / 'inventory.yaml').read_text()
