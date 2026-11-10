@@ -1702,6 +1702,58 @@ class Redvypr(QtCore.QObject):
             out[root] = backend.commit(paths, message)
         return out
 
+    def reload_item_library(self, path: str) -> int:
+        """
+        Loads a library again after its files changed (e.g. a git pull): the entries loaded from
+        it are removed from the metadata first, so entries deleted in the files are gone as well.
+        Entries of this instance not saved yet are lost: save the libraries first.
+        Returns the number of addresses loaded.
+        """
+        name = redvypr_metadata_sources.library_name(path)
+        remove = {}
+        for addr, (_kind, entries) in redvypr_metadata_sources.library_entries(self._copy_metadata()).items():
+            if redvypr_metadata_sources.library_owner(entries) == name:
+                remove[addr] = {'keys': [], 'mode': 'exact'}
+        if remove:
+            datapacket = redvypr.data_packets.commandpacket(command='reply')
+            datapacket['_metadata_remove'] = remove
+            self.redvyprqueue.put(datapacket)
+            self.redvyprreplyqueue.get()
+        return self.load_item_library(path)
+
+    def item_git_pull(self, ask_credentials=None, prefer=None) -> dict:
+        """
+        Saves the libraries, then pulls every git repository of the item files
+        (redvypr.item_git: needs committed files) and loads the libraries in a repository
+        again if it changed. Returns {repository root: SyncResult or the GitError}.
+        """
+        import redvypr.item_git as ritem_git
+        self.save_item_libraries()
+        out = {}
+        for root, (backend, _paths) in ritem_git.group_by_repo(self.item_git_paths(), prefer=prefer).items():
+            try:
+                res = backend.pull(ask_credentials=ask_credentials)
+            except ritem_git.GitError as e:
+                out[root] = e
+                continue
+            out[root] = res
+            if res.changed:
+                for lib in list(self.item_libraries):
+                    if ritem_git.find_repo(lib) == root:
+                        self.reload_item_library(lib)
+        return out
+
+    def item_git_push(self, ask_credentials=None, prefer=None) -> dict:
+        """Pushes every git repository of the item files. Returns {repository root: SyncResult or the GitError}."""
+        import redvypr.item_git as ritem_git
+        out = {}
+        for root, (backend, _paths) in ritem_git.group_by_repo(self.item_git_paths(), prefer=prefer).items():
+            try:
+                out[root] = backend.push(ask_credentials=ask_credentials)
+            except ritem_git.GitError as e:
+                out[root] = e
+        return out
+
     def library_default_files(self) -> dict:
         """
         {kind: path} of the files for new entries of a kind no library holds yet, next to the

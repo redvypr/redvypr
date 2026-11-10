@@ -582,7 +582,7 @@ def save_item_library(path: str, storage: dict, addresses=None) -> int:
             out.update(part)
         _write_sqlite_items(path, out)
         return n
-    _write_text(path, library_text(sections))
+    _write_text_if_changed(path, library_text(sections))
     return n
 
 
@@ -615,6 +615,21 @@ def library_text(sections: dict) -> str:
     return LIBRARY_HEADER + '\n' + yaml.dump(doc, Dumper=dumper, sort_keys=False, allow_unicode=True)
 
 
+def _write_text_if_changed(path: str, text: str) -> bool:
+    """
+    Writes a file if its text differs (line ends not counted: a git checkout on Windows may
+    have made them CRLF). Returns True if written.
+    """
+    if os.path.exists(path):
+        with open(path, 'r', encoding='utf-8', newline='') as f:
+            if f.read().replace('\r\n', '\n') == text:
+                return False
+    else:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    _write_text(path, text)
+    return True
+
+
 def _write_text(path: str, text: str):
     """Writes a file (always LF line ends: files in git shared between operating systems)."""
     tmp = path + '.tmp'
@@ -643,16 +658,9 @@ def _save_directory_library(path: str, sections: dict) -> int:
     written = set()
     for rel, secs in files.items():
         target = os.path.join(path, rel)
-        text = library_text(secs)
         written.add(os.path.normcase(os.path.abspath(target)))
         n += sum(len(v) for v in secs.values())
-        old = None
-        if os.path.exists(target):
-            with open(target, 'r', encoding='utf-8', newline='') as f:
-                old = f.read()
-        if old != text:
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            _write_text(target, text)
+        _write_text_if_changed(target, library_text(secs))
     # files of addresses that are gone (only library files: they start with the header)
     for f in directory_library_files(path):
         if os.path.normcase(os.path.abspath(f)) in written:

@@ -26,10 +26,14 @@ redvypr changelog
   `HeatflowClassicCalibration.raw2data()` (mV x `calibration_HF_SI`, W m-2); profile channels
   name their raw unit (`raw_unit`, hf0/hf1: V), converted into the input unit of the calibration
   by SI prefix (`item_calibration.unit_factor()`).
-- git for the item libraries (`redvypr.item_git`): status and commit of the item files
-  (`Redvypr.item_git_paths()`, `item_git_status()`, `item_git_commit()`), with the git program if
-  installed, else dulwich (pure Python); new dependencies `dulwich` and `keyring` (for the push
-  token, planned), so `pip install redvypr` works without git.
+- git for the item libraries (`redvypr.item_git`): status, commit, pull and push of the item files
+  (`Redvypr.item_git_paths()`, `item_git_status()`, `item_git_commit()`, `item_git_pull()`,
+  `item_git_push()`), with the git program if installed, else dulwich (pure Python); a pull needs
+  committed files, stops at conflicts without changes and loads the libraries again
+  (`reload_item_library()`); a push is refused if the remote is ahead; with dulwich the HTTPS
+  access token is kept in the system key store (`keyring`). New dependencies `dulwich` and
+  `keyring`, so `pip install redvypr` works without git. Library files are written only if their
+  text changed (line ends not counted).
 - Directory libraries: an item library can be a directory with one YAML file per item, item type
   and calibration (`items/<type>/<id>.yaml`, `item_types/<name>.yaml`,
   `calibrations/<sensor model>/<sn>/<date>_<uuid8>.yaml`, marker `redvypr_library.yaml`); saving
