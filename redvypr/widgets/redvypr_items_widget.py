@@ -169,9 +169,11 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
     new values from a time on) and its history.
     """
 
-    def __init__(self, redvypr_instance, parent=None):
+    def __init__(self, redvypr_instance, parent=None, embedded: bool = False):
+        """embedded: part of the Metadata window, which has the libraries, git, types and the time."""
         super().__init__(parent)
         self.redvypr = redvypr_instance
+        self.embedded = embedded
         self.setWindowTitle('Items')
         self.current_ref = None
         self._form_time = None          # state time of the item in the form
@@ -195,7 +197,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         top.addWidget(QtWidgets.QLabel('Type'))
         top.addWidget(self.type_filter, 1)
         top.addWidget(self.flat)
-        top.addWidget(QtWidgets.QLabel('State at'))
+        self.at_time_label = QtWidgets.QLabel('State at')
+        top.addWidget(self.at_time_label)
         top.addWidget(self.at_time)
         top.addWidget(self.use_now)
 
@@ -354,6 +357,12 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         lay = QtWidgets.QVBoxLayout(self)
         lay.addWidget(splitter, 1)
         lay.addWidget(self.status)
+        if embedded:
+            # the Metadata window has these (libraries, git, types, time)
+            lay.setContentsMargins(0, 0, 0, 0)
+            for w in (self.btn_load, self.btn_load_dir, self.btn_save_lib, self.btn_save_as, self.btn_types,
+                      self.btn_git, self.at_time_label, self.at_time, self.use_now):
+                w.hide()
 
         self._refresh_timer = QtCore.QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -366,6 +375,14 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.refresh()
 
     # --- helpers ---
+    def set_time(self, at_time=None):
+        """The state time (None: now), set by the Metadata window."""
+        if at_time is None:
+            self.use_now.setChecked(True)
+        else:
+            self.at_time.setDateTime(_qdt(at_time))
+            self.use_now.setChecked(False)
+
     def time(self):
         return None if self.use_now.isChecked() else _pydt(self.at_time.dateTime())
 

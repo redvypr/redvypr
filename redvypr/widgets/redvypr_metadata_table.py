@@ -43,7 +43,11 @@ class RedvyprMetadataTable(QtWidgets.QWidget):
         Action button committing newly validation-passed draft row entries.
     """
 
-    def __init__(self, redvypr_instance, redvypr_address=None, parent=None):
+    def __init__(self, redvypr_instance, redvypr_address=None, parent=None, library_filter: bool = False):
+        """
+        library_filter: a check box "items, item types, calibrations" (off: these entries, which
+        have their own tabs in the Metadata window, are hidden).
+        """
         super().__init__(parent)
         self.redvypr = redvypr_instance
         self.redvypr_address = redvypr_address
@@ -83,7 +87,8 @@ class RedvyprMetadataTable(QtWidgets.QWidget):
             self.address_edit.setText(f"{str(self.redvypr_address)}")
             layout.addLayout(self.address_edit_layout)
         else:
-            self.address_edit_layout.hide()
+            # a layout cannot be hidden: its widgets are not shown as it is not added
+            self.address_edit.hide()
 
         # QTableView setup
         self.table_view = QtWidgets.QTableView()
@@ -119,6 +124,13 @@ class RedvyprMetadataTable(QtWidgets.QWidget):
 
         self.btn_refresh = QtWidgets.QPushButton("Refresh Table")
         self.btn_refresh.clicked.connect(self.refresh_and_clear_filters)
+        self.show_library_entries = None
+        if library_filter:
+            self.base_model.hide_library_entries = True
+            self.show_library_entries = QtWidgets.QCheckBox('Items, item types, calibrations')
+            self.show_library_entries.setToolTip('Show the entries of items, item types and calibrations as '
+                                                 'well (they have their own tabs)')
+            self.show_library_entries.toggled.connect(self._library_entries_toggled)
 
         self.btn_add_row = QtWidgets.QPushButton("Insert New Row")
         self.btn_add_row.clicked.connect(self.addNewRowTrack)
@@ -130,6 +142,9 @@ class RedvyprMetadataTable(QtWidgets.QWidget):
         button_layout.addWidget(self.btn_refresh)
         button_layout.addWidget(self.btn_add_row)
         button_layout.addWidget(self.btn_save_row)
+        if self.show_library_entries is not None:
+            button_layout.addStretch(1)
+            button_layout.addWidget(self.show_library_entries)
         layout.addLayout(button_layout)
 
         # Bind selection event triggers across the model layout framework
@@ -137,6 +152,10 @@ class RedvyprMetadataTable(QtWidgets.QWidget):
             self.onSelectionChanged)
 
         # Initialize background data population routine
+        self.base_model.reload_from_backend(redvypr_address=self.redvypr_address)
+
+    def _library_entries_toggled(self, on):
+        self.base_model.hide_library_entries = not on
         self.base_model.reload_from_backend(redvypr_address=self.redvypr_address)
 
     def nodatakeys_toogled(self):
@@ -481,6 +500,15 @@ class RedvyprMetadataTable_legacy(QtWidgets.QWidget):
                                           f"Failed saving entry:\n{message}")
 
 
+def _is_library_entry(row) -> bool:
+    """True for an entry of an item, an item type or a calibration (redvypr.metadata_sources)."""
+    import redvypr.items as ritems
+    import redvypr.item_types as ritem_types
+    addr = str(row.get('source_address', ''))
+    return row.get('key') == 'calibration' or bool(ritems.parse_item_address(addr)) or \
+        bool(ritem_types.parse_itemtype_address(addr))
+
+
 class RedvyprMetadataModel(QtCore.QAbstractTableModel):
     """
     A dynamic table model that interfaces directly with a redvypr instance's
@@ -496,6 +524,8 @@ class RedvyprMetadataModel(QtCore.QAbstractTableModel):
 
         # Track temporary uncommitted rows being edited
         self._uncommitted_rows = {}
+        # hide the entries of items, item types and calibrations (Metadata window: own tabs)
+        self.hide_library_entries = False
 
     def reload_from_backend(self, redvypr_address = None):
         """Fetches the latest state from the redvypr instance."""
@@ -507,9 +537,9 @@ class RedvyprMetadataModel(QtCore.QAbstractTableModel):
             else:
                 mode= "all"
 
-            print(f"Metadata for address:{redvypr_address} with mode:{mode}")
             self._raw_data = self.redvypr.get_metadata(address=redvypr_address, mode=mode)
-            print("Raw data:", self._raw_data)
+            if self.hide_library_entries:
+                self._raw_data = [r for r in self._raw_data if not _is_library_entry(r)]
             self._uncommitted_rows.clear()
         except Exception as e:
             print(f"Error loading metadata: {e}")

@@ -75,6 +75,55 @@ def calibrations_from_metadata(storage: dict) -> list:
     return found
 
 
+@dataclasses.dataclass
+class CalibrationEntry:
+    """A calibration of the metadata with where it is stored and the sensor item it belongs to."""
+    calibration: typing.Any
+    address: str
+    source: str = ''                # library name ('library:<name>' source of the entry), '' if none
+    sensor_ref: typing.Optional[str] = None
+
+
+def calibration_entries(storage: dict) -> typing.List[CalibrationEntry]:
+    """
+    All calibrations of a metadata storage with their address, library and sensor item: the item
+    of type sensor_model (any sensor type if NA) whose id is the serial number. Sorted by sensor
+    model, serial number and date.
+    """
+    from .sensor_and_calibration_definitions import CalibrationFactory
+    import redvypr.metadata_sources as ms
+    keys = ritems.item_keys(storage)
+    ids = {}
+    for (itemtype, item_id) in keys:
+        if itemtype and item_id:
+            ids.setdefault(item_id, []).append(itemtype)
+    out = []
+    seen = set()
+    for addr, entries in storage.items():
+        for e in entries or []:
+            if not isinstance(e, dict) or e.get('key') != 'calibration' or not isinstance(e.get('value'), dict):
+                continue
+            uid = e['value'].get('calibration_uuid') or id(e)
+            if uid in seen:
+                continue
+            seen.add(uid)
+            try:
+                cal = CalibrationFactory.create(e['value'])
+            except Exception:
+                logger.debug('could not read a calibration', exc_info=True)
+                continue
+            sn = getattr(cal, 'sn', None)
+            types = [t for t in ids.get(sn, []) if calibration_fits_type(cal, t)]
+            ref = ritems.make_ref(types[0], sn) if len(types) == 1 else None
+            out.append(CalibrationEntry(cal, addr, ms.library_owner([e]) or '', ref))
+
+    def order(ce):
+        c = ce.calibration
+        return (str(getattr(c, 'sensor_model', '') or ''), str(getattr(c, 'sn', '') or ''),
+                _aware(getattr(c, 'date', None)) or datetime.datetime.min.replace(tzinfo=UTC))
+    return sorted(out, key=order)
+
+
 def _channel_key(calibration):
     channel = getattr(calibration, 'channel', None)
     if channel is None:

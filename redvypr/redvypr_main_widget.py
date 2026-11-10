@@ -468,16 +468,13 @@ class redvyprWidget(QtWidgets.QWidget):
         self.add_device_button = QtWidgets.QPushButton('Add Device')
         self.add_device_button.clicked.connect(self.open_add_device_widget)
         self.add_device_button.setFont(font)
-        self.edit_metadata_button = QtWidgets.QPushButton('Edit Metadata')
-        self.edit_metadata_button.clicked.connect(self.open_edit_metadata_widget)
+        self.edit_metadata_button = QtWidgets.QPushButton('Metadata')
+        self.edit_metadata_button.setToolTip('All metadata: generic entries, items (sensors, boards, ...), '
+                                             'item types and calibrations, item libraries and git')
+        self.edit_metadata_button.clicked.connect(lambda: self.open_metadata_window())
         self.edit_metadata_button.setFont(font)
-        self.edit_items_button = QtWidgets.QPushButton('Items')
-        self.edit_items_button.setToolTip('Sensors, boards and other items with their history (redvypr.items)')
-        self.edit_items_button.clicked.connect(self.open_items_widget)
-        self.edit_items_button.setFont(font)
         # Add buttons to widget
         self.home_widget_layout.addWidget(self.edit_metadata_button)
-        self.home_widget_layout.addWidget(self.edit_items_button)
         self.home_widget_layout.addWidget(self.add_device_button)
         # Add device table to widget
         self.home_widget_layout.addWidget(self.device_table_widget)
@@ -589,22 +586,32 @@ class redvyprWidget(QtWidgets.QWidget):
 
         self.redvypr.save_config(fname=fname_full, add_metadata=save_metadata, set_loglevel=loglevel_save, autostart=autostart_save)
 
+    def open_metadata_window(self, tab=None):
+        """
+        Opens the Metadata window (tabs Generic, Items, Item types, Calibrations), one per
+        redvypr window; tab: the tab to show.
+        """
+        from redvypr.widgets.redvypr_metadata_window import RedvyprMetadataWindow
+        win = getattr(self, 'metadata_window', None)
+        if win is None:
+            win = RedvyprMetadataWindow(redvypr_instance=self.redvypr)
+            win.resize(1300, 780)
+            self.metadata_window = win
+        else:
+            win.refresh()
+        if tab:
+            win.show_tab(tab)
+        win.show()
+        win.raise_()
+        return win
+
     def open_edit_metadata_widget(self):
-        """
-        Opens a widget to let the user add/edit metadata
-        """
-        #self.metadatawidget = MetadataWidget(self.redvypr)
-        self.metadatawidget = RedvyprMetadataTable(redvypr_instance = self.redvypr)
-        self.metadatawidget.show()
+        """The Metadata window at the tab Generic (former 'Edit Metadata')."""
+        return self.open_metadata_window('Generic')
 
     def open_items_widget(self):
-        """
-        Opens the window of the items (sensors, boards, ...) in the metadata
-        """
-        from redvypr.widgets.redvypr_items_widget import RedvyprItemsWidget
-        self.itemswidget = RedvyprItemsWidget(redvypr_instance=self.redvypr)
-        self.itemswidget.resize(1100, 650)
-        self.itemswidget.show()
+        """The Metadata window at the tab Items (former 'Items' window)."""
+        return self.open_metadata_window('Items')
 
     def open_add_device_widget(self):
         """
@@ -1330,13 +1337,12 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         deviceinfoAction = QtGui.QAction("&Show deviceinfos", self)
         deviceinfoAction.setStatusTip('Opens a window that displays deviceinfos (metadata)')
         deviceinfoAction.triggered.connect(self.show_deviceinfos)
-        metadataAction = QtGui.QAction("&Show/Edit metadata", self)
-        metadataAction.setStatusTip(
-            'Show/Edit the metadata of the devices')
-        metadataAction.triggered.connect(self.show_metadata)
-        itemsAction = QtGui.QAction("&Items (inventory)", self)
-        itemsAction.setStatusTip('Items: devices, boards, sensors and their parameters, item libraries')
-        itemsAction.triggered.connect(self.redvypr_widget.open_items_widget)
+        metadataAction = QtGui.QAction("&Metadata ...", self)
+        metadataAction.setStatusTip('All metadata: generic, items, item types, calibrations')
+        metadataAction.triggered.connect(lambda: self.redvypr_widget.open_metadata_window())
+        itemsAction = QtGui.QAction("&Query metadata ...", self)
+        itemsAction.setStatusTip('The metadata of an address at a time or as a timeline')
+        itemsAction.triggered.connect(self.show_metadata)
         consoleAction = QtGui.QAction("&Open console", self)
         consoleAction.triggered.connect(self.open_console)
         consoleAction.setShortcut("Ctrl+N")

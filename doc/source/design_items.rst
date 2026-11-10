@@ -453,6 +453,40 @@ Steps:
    by SI prefix (``item_calibration.unit_factor()``, V -> mV x1000).
 4. Convert existing sensor lists and calibration files once into libraries.
 
+The Metadata window
+-------------------
+
+Status 2026-11-10: implemented (``redvypr.widgets.redvypr_metadata_window``).
+
+All metadata are entries ``address -> key = value, valid from ... until``.
+Three kinds live at special addresses: **items** (things, with their tree),
+**item types** (the fields of a type) and **calibrations** (results of
+sensors, found by serial number and type). Item libraries (files and
+directories) hold exactly these three kinds; all other metadata (units of
+channels, the setup of a device, ...) stay in the instance and the data
+databases.
+
+One entry point "Metadata" (button in the main window, Tools menu
+"Metadata ..."; it replaces "Edit Metadata" and "Items") with a bar shared by
+all tabs (libraries: load file/folder, save as, list; "Save libraries";
+"Git ..."; the state time) and the tabs:
+
+* **Generic**: the metadata table (``RedvyprMetadataTable``: address, key,
+  value, validity, sortable, filters in the column heads, new entries),
+  without the entries of items, item types and calibrations unless the box
+  "Items, item types, calibrations" is ticked; "Query ..." opens the query
+  tool (``MetadataWidget``: an address at a time or as a timeline; Tools
+  menu "Query metadata ...").
+* **Items**: the Items window embedded (tree or flat list, form, history,
+  calibrations and attachments of the item).
+* **Item types**: the type editor; "From item" takes the item selected in
+  the tab Items.
+* **Calibrations**: all calibrations with their sensor item (``—`` if none
+  matches serial number and type), the one valid at the state time, the
+  library; filter (text, valid only, without sensor item), import, remove,
+  "Create sensor item", "Show sensor" / double click shows the sensor in
+  the tab Items.
+
 Performance: item index (planned)
 ---------------------------------
 

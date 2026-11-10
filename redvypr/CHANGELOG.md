@@ -7,6 +7,12 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- Metadata window (button "Metadata" in the main window, Tools menu "Metadata ..."; replaces
+  "Edit Metadata" and "Items"): bar with libraries, "Save libraries", "Git ..." and the state time
+  for all tabs; tabs Generic (metadata table without items, item types and calibrations unless
+  asked; "Query ..."), Items, Item types and Calibrations (new: all calibrations with their sensor
+  item, the valid one, the library; filter, import, remove, create sensor item, show sensor).
+  `item_calibration.calibration_entries()`. Tools menu "Query metadata ..." for the query tool.
 - Sensors and calibrations (design note section "Sensors, calibrations and the sensor manager",
   step 1): sensor types of the sensor manager named per model in English (`heatflow_classic`,
   `tar_sensor`, `base_sensor`), field `sensortype` removed (the `SensorFactory` uses `itemtype`,
@@ -238,6 +244,8 @@ redvypr changelog
 - db writer status (sqlite, timescale): the lower table is "Written per table and address" with the table
   type; packet tables (redvypr_datapacket) show no flat column ("–"), only data_flat tables have one per address
 ### Fixed
+- `RedvyprMetadataTable` without an address failed (a layout was hidden), so "Edit Metadata" did
+  not open; it no longer prints all metadata to the console when loading.
 - `HeatflowClassicCalibration` without `calibration_uuid` failed (uuid5 with a text namespace);
   its `sensor_model` is the item type `heatflow_classic` (the series stays the field `series`).
 - `ot_cli`: single-value answers (`ot state`, `channel`, `rloc16`, ...) only accept a line of the expected
