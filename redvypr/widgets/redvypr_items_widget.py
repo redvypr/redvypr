@@ -57,9 +57,11 @@ def value_to_text(value) -> str:
         return ''
     if isinstance(value, str):
         return value
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
     if hasattr(value, 'model_dump'):
         value = value.model_dump(mode='json', exclude_none=True)
-    return json.dumps(value, ensure_ascii=False)
+    return json.dumps(value, ensure_ascii=False, default=str)
 
 
 def text_to_value(text: str, base):

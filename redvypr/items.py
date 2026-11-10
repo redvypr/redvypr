@@ -235,8 +235,12 @@ def parse_item_address(address) -> typing.Optional[typing.Tuple[str, str]]:
 # --- writing ------------------------------------------------------------------------
 
 def item_fields(item: Item) -> dict:
-    """The metadata keys of an item: all set fields except type and id, with the type revision."""
-    fields = item.model_dump(mode='json', exclude_none=True)
+    """
+    The metadata keys of an item: all set fields except type and id, with the type revision.
+    Empty values ('', [], {}) are left out like None: writing the whole item ends their entries.
+    """
+    fields = {k: v for k, v in item.model_dump(mode='json', exclude_none=True).items()
+              if not (isinstance(v, (str, list, dict)) and len(v) == 0)}
     for k in ADDRESS_FIELDS:
         fields.pop(k, None)
     cls = type(item)

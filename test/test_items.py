@@ -281,3 +281,15 @@ def test_item_address_with_deviceid():
                                                        {'name': 'old'}, valid_from=T0), s)
     assert items.get_item(s, 'breakout_board_v01/BO-001', at_time=T1, builtin=False) is None
     assert items.list_items(s, at_time=T1) == []
+
+
+def test_empty_values_are_not_written_and_end_entries():
+    s = {}
+    items.add_item(s, items.Item(itemtype='gadget', id='G', name='x', attachments=[{'a': 1}]), valid_from=T0)
+    assert 'comment' not in [e['key'] for e in s[items.item_address('gadget', 'G')]]
+    items.add_item(s, items.Item(itemtype='gadget', id='G', name='', attachments=[]), valid_from=T1)
+    keys = [e['key'] for e in s[items.item_address('gadget', 'G')]]
+    assert keys.count('name') == 1 and keys.count('attachments') == 1      # no '' / [] entries
+    later = items.get_item(s, 'gadget/G', at_time='2026-12-01T00:00:00+00:00')
+    assert later.name is None and not later.attachments                     # ended at T1
+    assert items.get_item(s, 'gadget/G', at_time='2026-11-05T00:00:00+00:00').name == 'x'
