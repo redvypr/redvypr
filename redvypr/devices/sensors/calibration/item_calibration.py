@@ -86,14 +86,26 @@ def _channel_key(calibration):
         return str(channel)
 
 
-def select_calibration(calibrations, sn: str, datakey: str = '', at_time=None):
+NO_MODEL = (None, '', 'NA')
+
+
+def calibration_fits_type(calibration, itemtype: typing.Optional[str]) -> bool:
+    """True if the sensor_model of a calibration is the item type (or not given: any type)."""
+    model = getattr(calibration, 'sensor_model', None)
+    return itemtype is None or model in NO_MODEL or model == itemtype
+
+
+def select_calibration(calibrations, sn: str, datakey: str = '', at_time=None,
+                       itemtype: typing.Optional[str] = None):
     """
-    The calibration of a sensor (sn) for a datakey at a time: the latest with a date before the time.
-    If the calibrations of the sensor are for several channels, the one whose channel is the datakey
-    (or the datakey without '_suffix'). None if there is none.
+    The calibration of a sensor (serial number sn, item type itemtype) for a datakey at a time:
+    the latest with a date before the time. Serial numbers are unique per type only: a
+    calibration whose sensor_model is another type is not taken (sensor_model NA or empty: any
+    type). If the calibrations of the sensor are for several channels, the one whose channel is
+    the datakey (or the datakey without '_suffix'). None if there is none.
     """
     t = _aware(at_time) or datetime.datetime.now(UTC)
-    cands = [c for c in calibrations or [] if getattr(c, 'sn', None) == sn]
+    cands = [c for c in calibrations or [] if getattr(c, 'sn', None) == sn and calibration_fits_type(c, itemtype)]
     cands = [c for c in cands if _aware(getattr(c, 'date', None)) is None or _aware(c.date) <= t]
     if not cands:
         return None
@@ -129,8 +141,7 @@ def input_scale(found: dict, datakey: str) -> typing.Tuple[float, str, list]:
     ref = props.get('scale_ref')
     if ref and len(ref) == 2:
         role, key = ref
-        item = found.get(role)
-        value = ritems.param_value(getattr(item, key, None)) if item is not None else None
+        value, item = ritems.param_from(found, role, key)
         if value is not None and value > 0:
             return value, f'{key} of {item.ref}', []
         nominal = props.get('scale')
@@ -163,9 +174,9 @@ def apply_calibration(storage: dict, address, raw, at_time=None, calibrations=No
     if calibrations is None:
         calibrations = calibrations_from_metadata(storage)
     sn = getattr(sensor, 'sn', None) or sensor.id
-    cal = select_calibration(calibrations, sn, datakey, at_time)
+    cal = select_calibration(calibrations, sn, datakey, at_time, itemtype=sensor.itemtype)
     if cal is None:
-        res.problems.append(f'no calibration of {sensor.ref} (sn {sn})')
+        res.problems.append(f'no calibration of {sensor.ref} (sn {sn}, sensor_model {sensor.itemtype} or NA)')
         return res
     res.calibration = cal
     res.unit = getattr(cal, 'unit', '') or ''

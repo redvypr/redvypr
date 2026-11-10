@@ -5962,8 +5962,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             return None
         role, key = preset.scale_ref
         found = self.adc_items(channel) if found is None else found
-        item = found.get(role)
-        value = ritems.param_value(getattr(item, key, None)) if item is not None else None
+        value, item = ritems.param_from(found, role, key)
         if value is None or not value > 0:
             return None
         return value, f'{key} of {item.ref}'

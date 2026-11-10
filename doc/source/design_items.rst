@@ -210,7 +210,7 @@ with an id chip on the board. Example::
     norlog_v02/N-012          deviceid: 0xA1B2...
      +- breakout_board_v01/BO-003   parent: norlog_v02/N-012   R1: 10002.7 Ohm
          +- ntc_sensor/0042   parent: breakout_board_v01/BO-003, slot: ntc0
-         +- hf_sensor/HF-17   parent: breakout_board_v01/BO-003, slot: hf0
+         +- heatflow_classic/HF-17   parent: breakout_board_v01/BO-003, slot: hf0
 
 The slot is free: the channel name (``ntc0``) is the simplest case and needs
 nothing else. Who wants the terminals uses them (``J2.3-4``) and a setup
@@ -351,6 +351,83 @@ built-in profiles as built-in ``setup`` items. Tests in
 ``test/test_item_calibration.py``. Not yet: the live processing device and a
 choice "converted with items" in the plots.
 
+
+Sensors, calibrations and the sensor manager
+--------------------------------------------
+
+Status 2026-11-10: concept; step 1 implemented. No backward compatibility
+needed (only one user, no stored data with the old formats).
+
+**A sensor is an item.** The sensors of the sensor manager (``BaseSensor``
+and its subclasses) are item types: one type per sensor model, named in
+English (``heatflow_classic``, ``tar_sensor``), id = serial number
+(``sn``). The field ``sensortype`` of the manager is the item type
+(``itemtype``); the older format (address ``@i:sensor`` with one key
+``sensor``) is dropped. A sensor sits in the tree like any item, e.g. a heat
+flux sensor on a breakout board in slot ``hf0``.
+
+**A calibration is not a field of the sensor.** A sensor is calibrated
+several times; every calibration is an own metadata entry with its date
+(library kind ``calibration``, e.g. ``calibrations.yaml`` in the inventory
+repository). It is found by serial number **and** type: ``sn`` of the
+calibration = id of the sensor item, and ``sensor_model`` of the
+calibration = item type (``NA`` or empty: any type). Serial numbers are
+unique per type only, so an NTC ``0042`` and a heat flux sensor ``0042``
+are not confused. The sensitivity is only in the calibration (with its
+history), not a field of the item (a nominal value of the data sheet may
+be a field of the type).
+
+**Sensors with an internal sensor**, e.g. a heat flux sensor with an
+internal NTC: the internal sensor is an item of its own, child of the outer
+sensor (``parent`` = the heat flux sensor, ``slot`` = its channel, e.g.
+``ntc0``); without an own serial number its id is derived
+(``HF-0815-ntc``). It has its own calibration and moves with the outer
+sensor. A parameter of the measuring circuit (``scale_ref``, e.g. ``R1``)
+is searched along the ancestors of the sensor (NTC -> heat flux sensor ->
+breakout board): the first item having it is used (``get_items()`` returns
+the ``ancestors``, ``items.param_from()``). Later a type could name its
+parts (``parts: {ntc: ntc_sensor}``) so that the Items window creates them
+together.
+
+::
+
+    breakout_board_v01/BO-001                R1 = 9995.5 Ohm
+      +- heatflow_classic/HF-0815            slot hf0
+          +- ntc_sensor/HF-0815-ntc          slot ntc0  (internal NTC)
+
+**Sensor manager and Items window merged.** One store (metadata with item
+libraries), several views:
+
+=====================================  ========================================
+Sensor manager today                   Afterwards
+=====================================  ========================================
+sensor table, named lists, YAML        Items window (sensors are items; lists
+import                                 are library files)
+attachments of a sensor                Items window, for all items
+save to / load from a database         SQLite libraries, metadata in the data
+                                       databases
+calibration table, calibration import  Items window: area "Calibrations" of the
+                                       selected item, "Import calibration ..."
+plots, reports, autocalibration        stays a calibration tool, reading and
+                                       writing the calibrations of the metadata
+                                       (``calibrations.yaml``) instead of own
+                                       lists
+=====================================  ========================================
+
+Steps:
+
+1. Clean up (done 2026-11-10): one type per sensor model in English
+   (``heatflow_classic``, ``tar_sensor``, ``base_sensor``); ``sensortype``
+   removed (the factory uses ``itemtype``); the older sensor format
+   dropped; ``date_produced`` optional; the duplicate ``hf_sensor`` of the
+   norlog module removed; calibrations found by serial number and type;
+   circuit parameters searched along the ancestors.
+2. Items window: area "Calibrations" of the selected item (by serial number
+   and type) with "Import calibration ..." (creates the sensor item if
+   missing, ``from_calibration()``); attachments for all items.
+3. Sensor manager: the sensor table opens the Items window; plots, reports
+   and autocalibration work on the calibrations of the metadata.
+4. Convert existing sensor lists and calibration files once into libraries.
 
 Performance: item index (planned)
 ---------------------------------
@@ -548,7 +625,8 @@ Steps
    Assigning items from the address widget and the ADC tab follow with step 4.
 4. **Done** (``redvypr/items.py``: ``param_value()``, ``resolve_param()``;
    ``devices/norlog/norlog_items.py``: ``norlog_v02``, ``norlog_v021``,
-   ``breakout_board_v01`` with ``R1``, ``ntc_sensor``, ``hf_sensor``; profile
+   ``breakout_board_v01`` with ``R1``, ``ntc_sensor``, ``hf_sensor`` (removed
+   2026-11-10: ``heatflow_classic`` of the sensor manager); profile
    channels name the parameter, ``ChannelCal.scale_ref = ('board', 'R1')``).
    The norlog calibration is applied on the device, so the scale is a number
    there: the ADC tab shows the items of every channel (sensor, board) and

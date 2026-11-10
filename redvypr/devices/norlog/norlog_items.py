@@ -51,11 +51,3 @@ class NtcSensor(items.Item):
     dissipation_constant: typing.Optional[items.Quantity] = pydantic.Field(
         default=None, description='Self heating: power per temperature rise, e.g. mW/K')
 
-
-@items.register_item_type
-class HeatfluxSensor(items.Item):
-    """A heat flux sensor (thermopile)."""
-    ITEMTYPE: typing.ClassVar[str] = 'hf_sensor'
-    REVISION: typing.ClassVar[int] = 1
-    sensitivity: typing.Optional[items.Quantity] = pydantic.Field(
-        default=None, description='Sensitivity, e.g. uV/(W/m2)')

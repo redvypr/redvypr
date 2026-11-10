@@ -7,6 +7,14 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- Sensors and calibrations (design note section "Sensors, calibrations and the sensor manager",
+  step 1): sensor types of the sensor manager named per model in English (`heatflow_classic`,
+  `tar_sensor`, `base_sensor`), field `sensortype` removed (the `SensorFactory` uses `itemtype`,
+  a key `sensortype` of a sensor file is read as item type), older sensor format (`@i:sensor`)
+  dropped, `date_produced` optional; norlog type `hf_sensor` removed. Calibrations are found by
+  serial number and type (`sensor_model` = item type, `NA`: any). `get_items()` gives the
+  ancestors of the sensor (`FoundItems.ancestors`), `items.param_from()` searches a circuit
+  parameter (e.g. `R1`) along them, so an NTC inside a heat flux sensor takes R1 of the breakout.
 - Item types as data (`redvypr.item_types`, design note section "Item types as data"): a type
   defined in the metadata at `@i:'itemtype' and d:'<type>'` / in the section `item_types` of a
   library file (short form `<type>: {description, base, revision, fields, defaults, renamed}`)

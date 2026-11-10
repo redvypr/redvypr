@@ -448,6 +448,14 @@ def source_items(storage: dict, address, at_time=None, items=None) -> typing.Lis
     return found
 
 
+class FoundItems(dict):
+    """{role: item} of a datastream (get_items()); .ancestors: the ancestors of the sensor, parent first."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ancestors: typing.List[Item] = []
+
+
 def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
     """
     The items of a datastream at a time (default now), as {role: item}.
@@ -469,7 +477,7 @@ def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
     md = _query(storage, raddr, at_time)
     refs = md.get('items') if isinstance(md, dict) else None
     if isinstance(refs, dict) and refs:
-        result = {}
+        result = FoundItems()
         keys = item_keys(storage)
         for role, ref in refs.items():
             try:
@@ -486,11 +494,11 @@ def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
     items = list_items(storage, at_time=at_time, keys=keys)
     devices = source_items(storage, raddr, at_time=at_time, items=items)
     if not devices:
-        return {}
+        return FoundItems()
     if len(devices) > 1:
         logger.warning(f'several items name the source of {raddr}: {[d.ref for d in devices]}, using the first')
     device = devices[0]
-    result = {'device': device}
+    result = FoundItems(device=device)
     datakey = raddr.datakey
     if not datakey:
         return result
@@ -538,6 +546,17 @@ def get_items(storage: dict, address, at_time=None) -> typing.Dict[str, Item]:
                 board = next((it for it in descendants if it.ref == sensor.parent), None)
                 if board is not None:
                     result['board'] = board
+            # the ancestors of the sensor, from its parent up to the device
+            by_ref = {it.ref: it for it in descendants}
+            by_ref[device.ref] = device
+            ancestors = []
+            ref = sensor.parent
+            while ref and ref in by_ref and len(ancestors) < MAX_TREE_DEPTH:
+                ancestors.append(by_ref[ref])
+                if ref == device.ref:
+                    break
+                ref = by_ref[ref].parent
+            result.ancestors = ancestors
             break
     return result
 
@@ -579,6 +598,27 @@ def param_value(value) -> typing.Optional[float]:
     return None
 
 
+def param_from(found: dict, role: str, key: str):
+    """
+    A parameter of the item in a role of a datastream (result of get_items()); if that item does
+    not have it, the ancestors above it are searched (e.g. R1 of the breakout board for an NTC
+    inside a heat flux sensor: NTC -> heat flux sensor -> breakout board). Returns (number or
+    None, item having it or the item of the role or None).
+    """
+    item = found.get(role)
+    chain = [item] if item is not None else []
+    ancestors = list(getattr(found, 'ancestors', None) or [])
+    if item is not None and item in ancestors:
+        chain += ancestors[ancestors.index(item) + 1:]
+    elif item is None or role == 'sensor':
+        chain += ancestors
+    for it in chain:
+        value = param_value(getattr(it, key, None))
+        if value is not None:
+            return value, it
+    return None, item
+
+
 def resolve_param(storage: dict, address, role: str, key: str, at_time=None,
                   found: typing.Optional[dict] = None):
     """
@@ -588,7 +628,4 @@ def resolve_param(storage: dict, address, role: str, key: str, at_time=None,
     Returns (number or None, item or None).
     """
     found = get_items(storage, address, at_time=at_time) if found is None else found
-    item = found.get(role)
-    if item is None:
-        return None, None
-    return param_value(getattr(item, key, None)), item
+    return param_from(found, role, key)

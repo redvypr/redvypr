@@ -71,10 +71,41 @@ def test_select_calibration_by_date_and_channel():
     assert ic.select_calibration([old, new], '0042', 'ntc0', T1) is new
     assert ic.select_calibration([old, new], '0042', 'ntc0', T0) is old
     assert ic.select_calibration([old, new], '0042', 'ntc0', datetime.datetime(2024, 1, 1, tzinfo=UTC)) is None
-    a = CalibrationLinearFactor(sn='S', channel='a', coeff=1.0)
-    b = CalibrationLinearFactor(sn='S', channel='b', coeff=2.0)
+    d = datetime.datetime(2026, 1, 1, tzinfo=UTC)
+    a = CalibrationLinearFactor(sn='S', channel='a', coeff=1.0, date=d)
+    b = CalibrationLinearFactor(sn='S', channel='b', coeff=2.0, date=d)
     assert ic.select_calibration([a, b], 'S', 'b_raw', T1) is b
     assert ic.select_calibration([a, b], 'S', 'c', T1) is None
+
+
+def test_select_calibration_by_serial_number_and_type():
+    # serial numbers are unique per type only: sensor_model of the calibration = item type
+    d = datetime.datetime(2026, 1, 1, tzinfo=UTC)
+    ntc = ntc_cal(sn='0042', date=d).model_copy(update={'sensor_model': 'ntc_sensor'})
+    hf = CalibrationLinearFactor(sn='0042', coeff=5.0, date=d, sensor_model='heatflow_classic')
+    any_type = CalibrationLinearFactor(sn='0042', coeff=7.0, date=d)            # sensor_model NA
+    assert ic.select_calibration([ntc, hf], '0042', 'ntc0', T1, itemtype='ntc_sensor') is ntc
+    assert ic.select_calibration([ntc, hf], '0042', 'hf0', T1, itemtype='heatflow_classic') is hf
+    assert ic.select_calibration([any_type], '0042', 'x', T1, itemtype='ntc_sensor') is any_type
+    assert ic.select_calibration([hf], '0042', 'ntc0', T1, itemtype='ntc_sensor') is None
+
+
+def test_internal_ntc_takes_r1_from_the_breakout():
+    # NTC inside a heat flux sensor on the breakout: R1 is searched along the ancestors
+    s = {}
+    items.add_item(s, items.Item(itemtype='norlog_v02', id='N', deviceid='AA'), valid_from=T0)
+    items.add_item(s, norlog_items.BreakoutBoardV01(id='B', parent='norlog_v02/N',
+                                                    R1={'value': 9995.5, 'unit': 'Ohm'}), valid_from=T0)
+    items.add_item(s, items.Item(itemtype='heatflow_classic', id='HF-1', parent='breakout_board_v01/B',
+                                 slot='hf0'), valid_from=T0)
+    items.add_item(s, items.Item(itemtype='ntc_sensor', id='HF-1-ntc', parent='heatflow_classic/HF-1',
+                                 slot='ntc0'), valid_from=T0)
+    found = items.get_items(s, "ntc0 @ i:'adc_brd' and di:'AA'", at_time=T1)
+    assert found['sensor'].ref == 'ntc_sensor/HF-1-ntc' and found['board'].ref == 'heatflow_classic/HF-1'
+    assert [a.ref for a in found.ancestors] == ['heatflow_classic/HF-1', 'breakout_board_v01/B', 'norlog_v02/N']
+    value, item = items.param_from(found, 'board', 'R1')
+    assert value == 9995.5 and item.ref == 'breakout_board_v01/B'
+    assert items.param_from(found, 'board', 'nothing') == (None, found['board'])
 
 
 def test_series_split_at_changes():

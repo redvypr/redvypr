@@ -3,6 +3,8 @@ Sensors of the sensor and calibration manager as items (step 6 of design_items.r
 """
 import datetime
 
+import pytest
+
 from redvypr import items
 from redvypr import metadata as md
 from redvypr.devices.sensors.calibration import sensor_and_calibration_definitions as sd
@@ -24,15 +26,20 @@ def into_storage(metadict, storage=None):
 
 def test_sensor_is_item():
     s = heatflow()
-    assert s.itemtype == 'HeatflowClassicSensor' and s.id == 'HF-1' and s.ref == 'HeatflowClassicSensor/HF-1'
-    assert s.create_redvypr_address().to_address_string() == items.item_address('HeatflowClassicSensor', 'HF-1')
-    assert items.get_item_type('HeatflowClassicSensor') is sd.HeatflowClassicSensor
-    assert sd.SensorFactory.create({'sensortype': 'TarSensor', 'sn': 'T7',
-                                    'date_produced': '2025-01-01T00:00:00'}).id == 'T7'
+    assert s.itemtype == 'heatflow_classic' and s.id == 'HF-1' and s.ref == 'heatflow_classic/HF-1'
+    assert s.create_redvypr_address().to_address_string() == items.item_address('heatflow_classic', 'HF-1')
+    assert items.get_item_type('heatflow_classic') is sd.HeatflowClassicSensor
+    assert not hasattr(s, 'sensortype')
+    # the factory takes the item type; a key 'sensortype' of a sensor file is read as item type
+    t = sd.SensorFactory.create({'itemtype': 'tar_sensor', 'sn': 'T7'})
+    assert isinstance(t, sd.TarSensor) and t.id == 'T7' and t.date_produced is None
+    assert isinstance(sd.SensorFactory.create({'sensortype': 'heatflow_classic', 'sn': 'H2'}),
+                      sd.HeatflowClassicSensor)
     # id given instead of sn
     assert sd.BaseSensor(id='B1').sn == 'B1'
-    # without serial number: the address of older versions
-    assert "i:'sensor'" in sd.BaseSensor().create_redvypr_address().to_address_string()
+    # without serial number: no address
+    with pytest.raises(ValueError):
+        sd.BaseSensor().create_redvypr_address()
 
 
 def test_one_key_per_field_and_back():
@@ -44,21 +51,7 @@ def test_one_key_per_field_and_back():
     back = items.get_item(storage, s.ref)
     assert isinstance(back, sd.HeatflowClassicSensor) and back.date_produced == s.date_produced
     assert back.series == 'classic' and back.sn == 'HF-1'
-    assert [x.ref for x in sd.sensors_from_metadata(storage)] == ['HeatflowClassicSensor/HF-1']
-
-
-def test_legacy_format_is_read():
-    old = heatflow(sn='OLD-1')
-    storage = into_storage({old.create_legacy_address().to_address_string(): {'sensor': old.model_dump(mode='json')}})
-    found = sd.sensors_from_metadata(storage)
-    assert [(x.sensortype, x.sn) for x in found] == [('HeatflowClassicSensor', 'OLD-1')]
-    # stored as item as well: not twice
-    into_storage(sd.sensor_metadict(old), storage)
-    assert [(x.sensortype, x.sn) for x in sd.sensors_from_metadata(storage)] == [('HeatflowClassicSensor', 'OLD-1')]
-    # a sensor without serial number is written in the old format
-    nosn = sd.BaseSensor(name='x')
-    (addr, values), = sd.sensor_metadict(nosn).items()
-    assert "i:'sensor'" in addr and values['sensor']['name'] == 'x'
+    assert [x.ref for x in sd.sensors_from_metadata(storage)] == ['heatflow_classic/HF-1']
 
 
 def test_sensor_in_tree():
