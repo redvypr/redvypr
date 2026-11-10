@@ -540,6 +540,19 @@ Storage and exchange
   the table ``redvypr_metadata`` (the format of the databases written by
   redvypr, so a database reader sees them too); saving replaces only the
   item addresses, other metadata and tables of the file stay.
+* **Directory libraries** for collections that grow by adding (sensors,
+  calibrations): a directory with one YAML file per address, at a path made
+  of its kind and names, e.g. ``items/heatflow_classic/0614.yaml``,
+  ``item_types/calypso_CMI1018.yaml``,
+  ``calibrations/heatflow_classic/0614/20210914T202100_<uuid8>.yaml``;
+  every file has the format of a YAML library. Marked by
+  ``redvypr_library.yaml``. Saving writes only changed files and removes the
+  files of addresses that are gone. A new entry is added by putting a file
+  into the directory; git diffs and conflicts stay per file. Small, hand
+  kept collections (``item_types.yaml``, a small inventory) stay single
+  files. Types of a library are searched in the YAML files next to it (not
+  in subdirectories, which may hold thousands of files) and in its
+  directory ``item_types``; reading uses libyaml when available.
 * **Several library files** can be loaded at once, e.g. a git repository
   ``inventory_redvypr`` with ``inventory_norlog.yaml`` (items) and
   ``calibrations.yaml``. A library holds items and calibrations (the

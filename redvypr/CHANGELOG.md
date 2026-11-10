@@ -26,6 +26,12 @@ redvypr changelog
   `HeatflowClassicCalibration.raw2data()` (mV x `calibration_HF_SI`, W m-2); profile channels
   name their raw unit (`raw_unit`, hf0/hf1: V), converted into the input unit of the calibration
   by SI prefix (`item_calibration.unit_factor()`).
+- Directory libraries: an item library can be a directory with one YAML file per item, item type
+  and calibration (`items/<type>/<id>.yaml`, `item_types/<name>.yaml`,
+  `calibrations/<sensor model>/<sn>/<date>_<uuid8>.yaml`, marker `redvypr_library.yaml`); saving
+  writes only changed files and removes those of addresses that are gone; Items window "Load
+  folder ...". Types of a library are searched in the YAML files next to it and its directory
+  `item_types` (no longer in all subdirectories). YAML read and written with libyaml if available.
 - Item types as data (`redvypr.item_types`, design note section "Item types as data"): a type
   defined in the metadata at `@i:'itemtype' and d:'<type>'` / in the section `item_types` of a
   library file (short form `<type>: {description, base, revision, fields, defaults, renamed}`)

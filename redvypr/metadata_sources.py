@@ -24,9 +24,11 @@ they were written from a library (the original source is kept in the text).
 
 import copy
 import datetime
+import hashlib
 import json
 import logging
 import os
+import re
 import typing
 
 import yaml
@@ -284,7 +286,7 @@ def assign_library_entries(storage: dict, libraries: typing.List[str],
     defaults = dict(defaults or {})
     by_name = {}
     for path in libraries:
-        by_name.setdefault(os.path.basename(path), path)
+        by_name.setdefault(library_name(path), path)
     lib = library_entries(storage)
     out = {path: [] for path in libraries}
     new = []
@@ -397,45 +399,169 @@ def _write_sqlite_items(path: str, out: dict):
         con.close()
 
 
+# --- YAML and directory libraries -------------------------------------------------------------
+#
+# A library is a YAML file, an SQLite file or a directory. A directory library holds one YAML
+# file per address (an item, an item type, a calibration), at a path made of its kind and
+# names (library_file_of()), e.g.
+#
+#     items/heatflow_classic/0614.yaml
+#     item_types/calypso_CMI1018.yaml
+#     calibrations/heatflow_classic/0614/2021-09-14T202100_1a2b3c4d.yaml
+#
+# Every file has the format of a YAML library (sections items, item_types, calibrations), so it
+# can be read alone as well. The directory is marked by the file redvypr_library.yaml. Saving
+# writes only the files whose contents changed and removes the files of addresses that are gone.
+
+LIBRARY_HEADER = '# redvypr item library (design note design_items.rst)'
+LIBRARY_MARKER = 'redvypr_library.yaml'
+
+
+def yaml_load(stream):
+    """YAML with the fast libyaml loader if available."""
+    loader = getattr(yaml, 'CSafeLoader', yaml.SafeLoader)
+    return yaml.load(stream, Loader=loader)
+
+
+def library_name(path) -> str:
+    """Name of a library in the source tags ('library:<name>'): its file or directory name."""
+    return os.path.basename(os.path.normpath(str(path)))
+
+
+def is_directory_library(path) -> bool:
+    """True for a directory, and for a path that does not exist yet and has no suffix."""
+    p = str(path)
+    return os.path.isdir(p) or (not os.path.exists(p) and os.path.splitext(p)[1] == '')
+
+
+def _sections_to_storage(data) -> dict:
+    """Storage of the contents of a YAML library (sections, or a storage / simple format)."""
+    sections = tuple(LIBRARY_SECTIONS.values())
+    if isinstance(data, dict) and any(k in data for k in sections) and \
+            all(isinstance(data.get(k) or {}, dict) for k in sections):
+        import redvypr.item_types as ritem_types
+        joined = {}
+        for k in sections:
+            part = data.get(k) or {}
+            if k == 'item_types':
+                part = ritem_types.short_form_to_storage(part)
+            joined.update(part)
+        data = joined
+    storage = redvypr_metadata.normalize_metadata(data or {})
+    return {a: e for a, (_k, e) in library_entries(storage).items()}
+
+
+def _read_yaml_library(path: str) -> dict:
+    with open(path, 'r', encoding='utf-8') as f:
+        data = yaml_load(f) or {}
+    return _sections_to_storage(data)
+
+
+def directory_library_files(path: str) -> typing.List[str]:
+    """The YAML files of a directory library (with subdirectories, without the marker), sorted."""
+    out = []
+    for dirpath, dirnames, filenames in os.walk(str(path)):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith('.'))
+        for f in sorted(filenames):
+            if f.lower().endswith(('.yaml', '.yml')) and not (dirpath == str(path) and f == LIBRARY_MARKER):
+                out.append(os.path.join(dirpath, f))
+    return out
+
+
+def _read_directory_library(path: str) -> dict:
+    storage = {}
+    for f in directory_library_files(path):
+        try:
+            part = _read_yaml_library(f)
+        except Exception:
+            logger.warning(f'could not read {f}', exc_info=True)
+            continue
+        for a, entries in part.items():
+            storage.setdefault(a, []).extend(entries)
+    return storage
+
+
 def read_library_storage(path: str) -> dict:
     """
-    The library entries of a file (YAML or SQLite) as storage, without source tags and
-    without registering types (e.g. to change a file and write it again).
+    The library entries of a library (YAML file, SQLite file or directory) as storage, without
+    source tags and without registering types (e.g. to change a file and write it again).
     """
+    if is_directory_library(path):
+        return _read_directory_library(path) if os.path.isdir(str(path)) else {}
     if is_sqlite_library(path):
-        data = _read_sqlite_items(path)
-    else:
-        with open(path, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f) or {}
-        sections = tuple(LIBRARY_SECTIONS.values())
-        if isinstance(data, dict) and any(k in data for k in sections) and \
-                all(isinstance(data.get(k) or {}, dict) for k in sections):
-            import redvypr.item_types as ritem_types
-            joined = {}
-            for k in sections:
-                part = data.get(k) or {}
-                if k == 'item_types':
-                    part = ritem_types.short_form_to_storage(part)
-                joined.update(part)
-            data = joined
-    storage = redvypr_metadata.normalize_metadata(data)
-    return {a: e for a, (_k, e) in library_entries(storage).items()}
+        storage = redvypr_metadata.normalize_metadata(_read_sqlite_items(path))
+        return {a: e for a, (_k, e) in library_entries(storage).items()}
+    return _read_yaml_library(path)
+
+
+def _safe_name(text) -> str:
+    """A text usable as a file or directory name."""
+    name = re.sub(r'[^A-Za-z0-9._-]+', '_', str(text)).strip('._')
+    return name or '_'
+
+
+def _calibration_value(entries) -> dict:
+    for e in reversed(entries or []):
+        if e.get('key') == 'calibration' and isinstance(e.get('value'), dict):
+            return e['value']
+    return {}
+
+
+def library_file_of(kind: str, address: str, entries) -> str:
+    """Relative path of the file of an address in a directory library."""
+    import redvypr.item_types as ritem_types
+    if kind == 'item':
+        itemtype, item_id = redvypr_items.parse_item_address(address)
+        return os.path.join('items', _safe_name(itemtype), _safe_name(item_id) + '.yaml')
+    if kind == 'itemtype':
+        return os.path.join('item_types', _safe_name(ritem_types.parse_itemtype_address(address)) + '.yaml')
+    if kind == 'calibration':
+        v = _calibration_value(entries)
+        sn = v.get('sn') or v.get('manufacturer_sn') or 'NA'
+        model = v.get('sensor_model')
+        if model in (None, '', 'NA'):
+            model = v.get('calibration_type') or 'any'
+        date = str(v.get('date') or v.get('calibration_date') or 'nodate')
+        date = re.sub(r'[^0-9T]', '', date.replace(' ', 'T'))[:15] or 'nodate'
+        uid = _safe_name(v.get('calibration_uuid') or '')[-8:]
+        if not uid:
+            uid = hashlib.sha1(address.encode('utf-8')).hexdigest()[:8]
+        return os.path.join('calibrations', _safe_name(model), _safe_name(sn), f'{date}_{uid}.yaml')
+    return os.path.join('other', hashlib.sha1(address.encode('utf-8')).hexdigest()[:12] + '.yaml')
+
+
+def type_search_paths(path) -> typing.List[str]:
+    """
+    Where definitions of unknown item types of a library are searched (redvypr.item_types):
+    the YAML files next to it (not in subdirectories: they may hold thousands of other files)
+    and, for a directory library, its directory item_types.
+    """
+    p = os.path.abspath(os.path.normpath(str(path)))
+    folder = os.path.dirname(p)
+    out = []
+    if os.path.isdir(folder):
+        out = [os.path.join(folder, f) for f in sorted(os.listdir(folder))
+               if f.lower().endswith(('.yaml', '.yml')) and os.path.isfile(os.path.join(folder, f))]
+    if os.path.isdir(p) and os.path.isdir(os.path.join(p, 'item_types')):
+        out.append(os.path.join(p, 'item_types'))
+    return out
 
 
 def load_item_library(path: str, type_paths=None) -> dict:
     """
-    Storage of an item library file, entries tagged 'library:<file name>'. Only
-    item addresses are taken. YAML (storage format {address: [entries]} or simple
-    format {address: {key: value}}) or an SQLite file (suffix .sqlite, .sqlite3,
-    .db; table redvypr_metadata as written by redvypr, e.g. an inventory database).
+    Storage of an item library, entries tagged 'library:<name>'. Only library addresses
+    (items, item types, calibrations) are taken. A YAML file (storage format {address:
+    [entries]} or simple format {address: {key: value}}, or sections), an SQLite file (suffix
+    .sqlite, .sqlite3, .db; table redvypr_metadata as written by redvypr) or a directory
+    library (one file per address, see library_file_of()).
     """
     storage = read_library_storage(path)
-    # item types defined in the file: usable right away; types of its items not known yet
-    # are searched in the directory of the file and in type_paths
+    # item types defined in the library: usable right away; types of its items not known yet
+    # are searched next to it (type_search_paths()) and in type_paths
     import redvypr.item_types as ritem_types
     ritem_types.register_from_storage(storage, source=path)
-    ritem_types.resolve_types(storage, [os.path.dirname(os.path.abspath(path))] + list(type_paths or []))
-    return tag_storage(storage, f'library:{os.path.basename(path)}', force=True)
+    ritem_types.resolve_types(storage, type_search_paths(path) + list(type_paths or []))
+    return tag_storage(storage, f'library:{library_name(path)}', force=True)
 
 
 def save_item_library(path: str, storage: dict, addresses=None) -> int:
@@ -446,6 +572,22 @@ def save_item_library(path: str, storage: dict, addresses=None) -> int:
     addresses: only these (e.g. from assign_library_entries()), default all.
     Returns the number of addresses written.
     """
+    sections = _library_sections(storage, addresses)
+    n = sum(len(v) for v in sections.values())
+    if is_directory_library(path):
+        return _save_directory_library(path, sections)
+    if is_sqlite_library(path):
+        out = {}
+        for part in sections.values():
+            out.update(part)
+        _write_sqlite_items(path, out)
+        return n
+    _write_text(path, library_text(sections))
+    return n
+
+
+def _library_sections(storage: dict, addresses=None) -> dict:
+    """{kind: {address: entries}} of the library entries to write (without hostinfo and source)."""
     lib = library_entries(storage)
     sections = {kind: {} for kind in LIBRARY_KINDS}
     for addr in sorted(lib):
@@ -458,23 +600,73 @@ def save_item_library(path: str, storage: dict, addresses=None) -> int:
             entries.append({'key': e['key'], 'value': _plain_value(e['value']), 'constraints': _plain_value(c)})
         entries.sort(key=lambda e: (e['key'], str(e['constraints'].get('valid_from'))))
         sections[kind][addr] = entries
-    n = sum(len(v) for v in sections.values())
-    if is_sqlite_library(path):
-        out = {}
-        for part in sections.values():
-            out.update(part)
-        _write_sqlite_items(path, out)
-        return n
+    return sections
+
+
+def library_text(sections: dict) -> str:
+    """Text of a YAML library with these sections {kind: {address: entries}}."""
     doc = {}
     for kind in LIBRARY_KINDS:
-        if sections[kind]:
+        if sections.get(kind):
             doc[LIBRARY_SECTIONS[kind]] = sections[kind]
     if not doc:
         doc['items'] = {}
+    dumper = getattr(yaml, 'CSafeDumper', yaml.SafeDumper)
+    return LIBRARY_HEADER + '\n' + yaml.dump(doc, Dumper=dumper, sort_keys=False, allow_unicode=True)
+
+
+def _write_text(path: str, text: str):
+    """Writes a file (always LF line ends: files in git shared between operating systems)."""
     tmp = path + '.tmp'
-    # always LF line ends (files in git shared between operating systems)
     with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
-        f.write('# redvypr item library (design note design_items.rst)\n')
-        yaml.safe_dump(doc, f, sort_keys=False, allow_unicode=True)
+        f.write(text)
     os.replace(tmp, path)
+
+
+def _save_directory_library(path: str, sections: dict) -> int:
+    """
+    Writes a directory library: one file per address; only changed files are written, files
+    of addresses no longer in the library are removed (and their empty directories).
+    """
+    path = os.path.normpath(str(path))
+    os.makedirs(path, exist_ok=True)
+    marker = os.path.join(path, LIBRARY_MARKER)
+    if not os.path.exists(marker):
+        _write_text(marker, '# redvypr item library directory: one file per item, item type and calibration\n'
+                            'format: 1\n')
+    files = {}
+    for kind, part in sections.items():
+        for addr, entries in part.items():
+            rel = library_file_of(kind, addr, entries)
+            files.setdefault(rel, {k: {} for k in LIBRARY_KINDS})[kind][addr] = entries
+    n = 0
+    written = set()
+    for rel, secs in files.items():
+        target = os.path.join(path, rel)
+        text = library_text(secs)
+        written.add(os.path.normcase(os.path.abspath(target)))
+        n += sum(len(v) for v in secs.values())
+        old = None
+        if os.path.exists(target):
+            with open(target, 'r', encoding='utf-8', newline='') as f:
+                old = f.read()
+        if old != text:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            _write_text(target, text)
+    # files of addresses that are gone (only library files: they start with the header)
+    for f in directory_library_files(path):
+        if os.path.normcase(os.path.abspath(f)) in written:
+            continue
+        try:
+            with open(f, 'r', encoding='utf-8') as fh:
+                first = fh.readline().rstrip('\r\n')
+        except OSError:
+            continue
+        if first == LIBRARY_HEADER:
+            os.remove(f)
+            d = os.path.dirname(f)
+            while os.path.normcase(os.path.abspath(d)) != os.path.normcase(os.path.abspath(path)) and \
+                    os.path.isdir(d) and not os.listdir(d):
+                os.rmdir(d)
+                d = os.path.dirname(d)
     return n

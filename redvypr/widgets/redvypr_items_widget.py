@@ -208,6 +208,10 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.btn_delete.setToolTip('Remove the selected item with its whole history (for mistakes; an item '
                                    'that is no longer used gets status "retired" instead)')
         self.btn_load = QtWidgets.QPushButton('Load library ...')
+        self.btn_load_dir = QtWidgets.QPushButton('Load folder ...')
+        self.btn_load_dir.setToolTip('Load a directory library (one file per item and calibration, '
+                                     'marked by redvypr_library.yaml)')
+        self.btn_load_dir.clicked.connect(lambda: self.load_library(folder=True))
         self.btn_save_lib = QtWidgets.QPushButton('Save libraries')
         self.btn_save_lib.setToolTip('Save every loaded library file: each item and calibration into the file '
                                      'it was loaded from, new ones into the first file of their kind')
@@ -227,8 +231,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.btn_refresh.clicked.connect(self.refresh)
         buttons = QtWidgets.QGridLayout()
         for i, b in enumerate((self.btn_new, self.btn_copy, self.btn_move, self.btn_delete,
-                               self.btn_load, self.btn_save_lib, self.btn_save_as, self.btn_refresh,
-                               self.btn_types)):
+                               self.btn_load, self.btn_load_dir, self.btn_save_lib, self.btn_save_as,
+                               self.btn_refresh, self.btn_types)):
             buttons.addWidget(b, i // 4, i % 4)
 
         left = QtWidgets.QWidget()
@@ -846,8 +850,10 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.set_item(self.redvypr.get_item(item.ref, at_time=self.time()))
         return True
 
-    def load_library(self, path=None):
-        if not path:
+    def load_library(self, path=None, folder=False):
+        if not path and folder:
+            path = QtWidgets.QFileDialog.getExistingDirectory(self, 'Load library folder', '')
+        elif not path:
             path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Load item library', '', LIBRARY_FILTER)
         if not path:
             return

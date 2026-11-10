@@ -1594,12 +1594,15 @@ class Redvypr(QtCore.QObject):
         return n
 
     def item_type_search_paths(self) -> list:
-        """Where definitions of unknown item types are searched: item_type_paths, then the library directories."""
+        """
+        Where definitions of unknown item types are searched: item_type_paths (with
+        subdirectories), then next to the libraries (metadata_sources.type_search_paths()).
+        """
         paths = list(self.item_type_paths)
         for lib in self.item_libraries:
-            d = os.path.dirname(os.path.abspath(lib))
-            if d not in paths:
-                paths.append(d)
+            for p in redvypr_metadata_sources.type_search_paths(lib):
+                if p not in paths:
+                    paths.append(p)
         return paths
 
     def resolve_item_types(self) -> list:
@@ -1625,7 +1628,7 @@ class Redvypr(QtCore.QObject):
             if ritem_types.definitions_in_file(f):
                 files.add(f)
         for lib in self.item_libraries:
-            if not redvypr_metadata_sources.is_sqlite_library(lib) and os.path.exists(lib):
+            if not redvypr_metadata_sources.is_sqlite_library(lib) and os.path.isfile(lib):
                 if ritem_types.definitions_in_file(os.path.abspath(lib)):
                     files.add(lib)
         return sorted(os.path.abspath(f) for f in files)
@@ -1662,7 +1665,8 @@ class Redvypr(QtCore.QObject):
         {kind: path} of the files for new entries of a kind no library holds yet, next to the
         first YAML library (redvypr.metadata_sources.DEFAULT_LIBRARY_FILES, e.g. calibrations.yaml).
         """
-        yaml_libs = [p for p in self.item_libraries if not redvypr_metadata_sources.is_sqlite_library(p)]
+        yaml_libs = [p for p in self.item_libraries if not redvypr_metadata_sources.is_sqlite_library(p)
+                     and not redvypr_metadata_sources.is_directory_library(p)]
         if not yaml_libs:
             return {}
         folder = os.path.dirname(os.path.abspath(yaml_libs[0]))

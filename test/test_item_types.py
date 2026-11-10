@@ -114,7 +114,8 @@ def test_invalid_kind_is_rejected():
 
 
 def test_lookup_of_unknown_types_in_the_library_directory(tmp_path):
-    # only the items are loaded; the definitions are found in the same directory (and subdirectories)
+    # only the items are loaded; the definitions are found in the YAML files next to the library
+    # (not in subdirectories: they may hold thousands of files), or in item_type_paths (with subdirectories)
     import os
     import time
     import redvypr
@@ -123,6 +124,15 @@ def test_lookup_of_unknown_types_in_the_library_directory(tmp_path):
     with open(sub / 'CMI1018.yaml', 'w', encoding='utf-8') as f:
         yaml.safe_dump({'item_types': {'calypso_CMI1018': CALYPSO,
                                        'unused_type': {'description': 'not needed'}}}, f)
+    s0 = {}
+    items.add_item(s0, items.Item(itemtype='calypso_CMI1018', id='X'), valid_from=T0)
+    only_sub = str(tmp_path / 'only_sub.yaml')
+    ms.save_item_library(only_sub, s0)
+    ms.load_item_library(only_sub)
+    assert 'calypso_CMI1018' not in items.ITEM_TYPES        # subdirectory not searched
+    os.replace(sub / 'CMI1018.yaml', tmp_path / 'item_types.yaml')
+    sub = tmp_path
+    os.remove(only_sub)
     s = {}
     items.add_item(s, items.Item(itemtype='calypso_CMI1018', id='0011', heading_offset=4.0), valid_from=T0)
     items.add_item(s, items.Item(itemtype='gadget_without_definition', id='G1'), valid_from=T0)
@@ -141,7 +151,7 @@ def test_lookup_of_unknown_types_in_the_library_directory(tmp_path):
     items.ITEM_TYPES.pop('calypso_CMI1018')
     other = tmp_path / 'elsewhere'
     other.mkdir()
-    os.replace(sub / 'CMI1018.yaml', other / 'CMI1018.yaml')
+    os.replace(sub / 'item_types.yaml', other / 'CMI1018.yaml')
     r = redvypr.Redvypr(hostname='typelookup')
     r.item_type_paths = [str(other)]
     r.load_item_library(inv)
