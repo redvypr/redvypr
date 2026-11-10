@@ -568,8 +568,18 @@ Storage and exchange
   fetch), the changed files of the selected one, commit message and
   "Commit", "Refresh", "Fetch", "Pull" (the libraries are loaded again, the
   tree is refreshed), "Push"; a dialog asks for user name and access token
-  (dulwich). Planned: git bundles for field computers without network (one file with the
-  commits, carried there and back), a "Git" area in the Items window. A ZIP
+  (dulwich). **Bundles** for computers without network: "Export bundle ..."
+  writes the branch with all commits into one file (the inventory: about
+  1.4 MB) and next to it ``<bundle>.txt`` with server, branch, commit, date
+  and the libraries in their load order; "New from bundle ..." makes a
+  repository from it on the field computer (origin = the server named in
+  the information file, so it can push later) and loads the libraries in
+  the same order (new items go into the first library of their kind);
+  "Import bundle ..." brings the commits of a bundle in like a pull
+  (fast-forward or merge, a conflict stops it without changes) and loads
+  the libraries again. Bundles of the git program and of dulwich are the
+  same format (dulwich is slower with many files: about 20 s for the
+  inventory instead of 1 s). A ZIP
   of the libraries stays an option for read-only copies (e.g. the state of
   the inventory with a measurement campaign).
 * **Directory libraries** for collections that grow by adding (sensors,

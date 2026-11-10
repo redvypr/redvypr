@@ -1754,6 +1754,55 @@ class Redvypr(QtCore.QObject):
                 out[root] = e
         return out
 
+    def item_git_export_bundle(self, root: str, path: str, prefer=None) -> str:
+        """
+        Saves the libraries and writes the branch of the repository root (with the item files)
+        into a bundle file for a computer without network (redvypr.item_git). Returns the path.
+        """
+        import redvypr.item_git as ritem_git
+        self.save_item_libraries()
+        backend = ritem_git.backend_for(root, prefer=prefer)
+        if backend is None:
+            raise ritem_git.GitError(f'{root} is not a git repository')
+        libs = [lib for lib in self.item_libraries if ritem_git.find_repo(lib) == backend.root]
+        return backend.create_bundle(path, libraries=libs)
+
+    def item_git_import_bundle(self, root: str, path: str, prefer=None):
+        """
+        Brings the commits of a bundle into the repository root like a pull (needs committed
+        files) and loads its libraries again if it changed. Returns the SyncResult.
+        """
+        import redvypr.item_git as ritem_git
+        self.save_item_libraries()
+        backend = ritem_git.backend_for(root, prefer=prefer)
+        if backend is None:
+            raise ritem_git.GitError(f'{root} is not a git repository')
+        res = backend.import_bundle(path)
+        if res.changed:
+            for lib in list(self.item_libraries):
+                if ritem_git.find_repo(lib) == backend.root:
+                    self.reload_item_library(lib)
+        return res
+
+    def item_git_clone_bundle(self, path: str, target: str, remote_url=None, prefer=None) -> list:
+        """
+        A new repository in target from a bundle (field computer); its libraries (YAML files and
+        library directories directly in it) are loaded. Returns the paths of the libraries.
+        """
+        import redvypr.item_git as ritem_git
+        backend = ritem_git.clone_bundle(path, target, remote_url=remote_url, prefer=prefer)
+        # the libraries in the order of the computer the bundle came from (new items go into the
+        # first library of their kind), then the others found in the repository
+        named = ritem_git.read_bundle_info(path).get('libraries', '')
+        libs = [os.path.join(backend.root, *p.strip().split('/')) for p in named.split(',') if p.strip()]
+        libs = [p for p in libs if os.path.exists(p)]
+        for p in redvypr_metadata_sources.find_libraries(backend.root):
+            if os.path.normcase(p) not in [os.path.normcase(x) for x in libs]:
+                libs.append(p)
+        for lib in libs:
+            self.load_item_library(lib)
+        return libs
+
     def library_default_files(self) -> dict:
         """
         {kind: path} of the files for new entries of a kind no library holds yet, next to the

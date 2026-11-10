@@ -84,6 +84,17 @@ class RedvyprItemGitWidget(QtWidgets.QWidget):
         self.btn_pull = QtWidgets.QPushButton('Pull')
         self.btn_pull.setToolTip('Get the new commits of the servers; the libraries are loaded again')
         self.btn_push = QtWidgets.QPushButton('Push')
+        self.btn_export = QtWidgets.QPushButton('Export bundle ...')
+        self.btn_export.setToolTip('The selected repository as one file (git bundle) for a computer without network')
+        self.btn_import = QtWidgets.QPushButton('Import bundle ...')
+        self.btn_import.setToolTip('The commits of a bundle (e.g. from the field) into the selected repository, '
+                                   'like a pull')
+        self.btn_clone = QtWidgets.QPushButton('New from bundle ...')
+        self.btn_clone.setToolTip('A new repository from a bundle (e.g. on a field computer); its libraries '
+                                  'are loaded')
+        self.btn_export.clicked.connect(lambda: self.export_bundle())
+        self.btn_import.clicked.connect(lambda: self.import_bundle())
+        self.btn_clone.clicked.connect(lambda: self.clone_bundle())
         self.btn_commit.clicked.connect(lambda: self.commit())
         self.btn_refresh.clicked.connect(lambda: self.refresh())
         self.btn_fetch.clicked.connect(lambda: self.refresh(fetch=True))
@@ -106,6 +117,12 @@ class RedvyprItemGitWidget(QtWidgets.QWidget):
             bl.addWidget(b)
         bl.addStretch(1)
         lay.addLayout(bl)
+        bb = QtWidgets.QHBoxLayout()
+        bb.addWidget(QtWidgets.QLabel('Without network:'))
+        for b in (self.btn_export, self.btn_import, self.btn_clone):
+            bb.addWidget(b)
+        bb.addStretch(1)
+        lay.addLayout(bb)
         lay.addWidget(self.status)
         self.refresh()
 
@@ -223,6 +240,78 @@ class RedvyprItemGitWidget(QtWidgets.QWidget):
 
     def pull(self):
         return self._sync('pull')
+
+    # --- bundles ---
+    def export_bundle(self, path=None):
+        root = self.selected_root()
+        if root is None:
+            self.set_status('no repository selected', error=True)
+            return None
+        if not path:
+            import datetime
+            name = f'{os.path.basename(root)}_{datetime.date.today().isoformat()}.bundle'
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Export bundle', name, 'git bundle (*.bundle)')
+        if not path:
+            return None
+        self._busy(True)
+        try:
+            out = self.redvypr.item_git_export_bundle(root, path, prefer=self.prefer)
+        except Exception as e:
+            self.set_status(f'no bundle written: {e}', error=True)
+            return None
+        finally:
+            self._busy(False)
+        self.set_status(f'bundle written: {out} (and {os.path.basename(out)}.txt); '
+                        'on the other computer: "New from bundle" or "Import bundle"')
+        return out
+
+    def import_bundle(self, path=None):
+        root = self.selected_root()
+        if root is None:
+            self.set_status('no repository selected', error=True)
+            return None
+        if not path:
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Import bundle', '', 'git bundle (*.bundle)')
+        if not path:
+            return None
+        self._busy(True)
+        try:
+            res = self.redvypr.item_git_import_bundle(root, path, prefer=self.prefer)
+        except Exception as e:
+            self.set_status(f'bundle not imported: {e}', error=True)
+            return None
+        finally:
+            self._busy(False)
+        self.refresh()
+        self.set_status(f'{os.path.basename(path)}: {res.action}')
+        if res.changed:
+            self.libraries_changed.emit()
+        return res
+
+    def clone_bundle(self, path=None, target=None):
+        if not path:
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'New repository from bundle', '',
+                                                            'git bundle (*.bundle)')
+        if not path:
+            return None
+        if not target:
+            target = QtWidgets.QFileDialog.getExistingDirectory(self, 'Empty folder for the new repository')
+        if not target:
+            return None
+        self._busy(True)
+        try:
+            libs = self.redvypr.item_git_clone_bundle(path, target, prefer=self.prefer)
+        except Exception as e:
+            self.set_status(f'no repository made: {e}', error=True)
+            return None
+        finally:
+            self._busy(False)
+        self.refresh()
+        self.set_status(f'repository {target} made, libraries loaded: ' +
+                        ', '.join(os.path.basename(p) for p in libs) +
+                        '. Save the redvypr configuration to load them at the start.')
+        self.libraries_changed.emit()
+        return libs
 
     def push(self):
         return self._sync('push')

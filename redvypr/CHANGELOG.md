@@ -36,7 +36,12 @@ redvypr changelog
   `pip install redvypr` works without git. Library files are written only if their text changed
   (line ends not counted). Items window "Git ...": repositories of the item files with their
   changes, commit, refresh, fetch, pull (libraries loaded again), push, dialog for user name and
-  access token.
+  access token. Bundles for computers without network: "Export bundle ..." (one file with the
+  commits, `<bundle>.txt` with server, branch, commit and the libraries in load order), "New
+  from bundle ..." (a repository on the field computer, origin = the server, libraries loaded
+  in the same order), "Import bundle ..." (like a pull); `GitBackend.create_bundle()`,
+  `import_bundle()`, `item_git.clone_bundle()`, `Redvypr.item_git_export_bundle()`,
+  `item_git_import_bundle()`, `item_git_clone_bundle()`, `metadata_sources.find_libraries()`.
 - Directory libraries: an item library can be a directory with one YAML file per item, item type
   and calibration (`items/<type>/<id>.yaml`, `item_types/<name>.yaml`,
   `calibrations/<sensor model>/<sn>/<date>_<uuid8>.yaml`, marker `redvypr_library.yaml`); saving

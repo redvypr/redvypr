@@ -27,7 +27,17 @@ first). Credentials: the git program uses its own; with dulwich an HTTPS
 remote takes a user name and a personal access token, kept in the system
 key store (keyring, service ``redvypr-git:<host>``) and asked for with a
 callback when missing or rejected.
+
+Bundles for computers without network (:meth:`GitBackend.create_bundle`,
+:meth:`GitBackend.import_bundle`, :func:`clone_bundle`): a bundle is one file
+with the commits of the branch; next to it ``<bundle>.txt`` names the server,
+branch and commit, so a computer made from the bundle can later push to the
+server. Importing a bundle works like a pull (fast-forward, merge, a conflict
+stops it without changes). Bundles of the git program and of dulwich are the
+same format.
 """
+
+import datetime
 
 import dataclasses
 import io
@@ -160,11 +170,29 @@ class GitBackend:
     def _fetch(self, ask_credentials=None):
         raise NotImplementedError
 
-    def _ahead_behind(self) -> typing.Tuple[int, int]:
+    def _ahead_behind(self, target=None) -> typing.Tuple[int, int]:
+        """(ahead, behind) of HEAD against target (default: the remote branch)."""
         raise NotImplementedError
 
-    def _merge_remote(self, fast_forward: bool) -> str:
+    def _merge_remote(self, fast_forward: bool, target=None) -> str:
         raise NotImplementedError
+
+    def _create_bundle(self, path: str):
+        raise NotImplementedError
+
+    def _fetch_bundle(self, path: str, src: str, target: str):
+        """Objects of a bundle into the repository, its branch src as ref target (refs/remotes/bundle/...)."""
+        raise NotImplementedError
+
+    def bundle_heads(self, path: str) -> typing.Dict[str, str]:
+        """{ref: commit} of the branches in a bundle."""
+        from dulwich import bundle as dbundle
+        with open(path, 'rb') as f:
+            b = dbundle.read_bundle(f)
+            try:
+                return {k.decode(): v.decode() for k, v in b.references.items()}
+            finally:
+                b.close()
 
     def _push(self, ask_credentials=None):
         raise NotImplementedError
@@ -195,6 +223,48 @@ class GitBackend:
         if behind == 0:
             return SyncResult('up to date', before, before, ahead, behind)
         action = self._merge_remote(fast_forward=(ahead == 0))
+        return SyncResult(action, before, self.head(), ahead, behind)
+
+    def create_bundle(self, path: str, libraries=None) -> str:
+        """
+        Writes the current branch with all its commits into a bundle file, and next to it
+        <path>.txt with server, branch, commit and date, and the libraries (paths relative to
+        the repository, in the order they were loaded: new items go into the first library of
+        their kind, so the other computer loads them in the same order). Returns the path.
+        """
+        path = os.path.abspath(path)
+        if self.head() is None:
+            raise GitError('the repository has no commits')
+        self._create_bundle(path)
+        info = {'server': self.remote_url() or '', 'branch': self.branch(), 'commit': self.head(),
+                'created': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
+                'repository': os.path.basename(self.root)}
+        if libraries:
+            info['libraries'] = ', '.join(_rel(self.root, p) for p in libraries)
+        with open(path + '.txt', 'w', encoding='utf-8', newline='\n') as f:
+            f.write('# redvypr item libraries: git bundle (see redvypr.item_git)\n')
+            for k, v in info.items():
+                f.write(f'{k}: {v}\n')
+        return path
+
+    def import_bundle(self, path: str) -> SyncResult:
+        """
+        Brings in the commits of a bundle like a pull: fast-forward, or a merge if both sides
+        have new commits; needs a clean working tree; a conflict stops it without changes.
+        """
+        self._require_clean()
+        heads = self.bundle_heads(path)
+        want = f'refs/heads/{self.branch()}'
+        src = want if want in heads else next((h for h in heads if h.startswith('refs/heads/')), None)
+        if src is None:
+            raise GitError(f'{os.path.basename(path)} has no branch')
+        target = f'refs/remotes/bundle/{src.split("/", 2)[2]}'
+        self._fetch_bundle(os.path.abspath(path), src, target)
+        ahead, behind = self._ahead_behind(target)
+        before = self.head()
+        if behind == 0:
+            return SyncResult('up to date', before, before, ahead, behind)
+        action = self._merge_remote(fast_forward=(ahead == 0), target=target)
         return SyncResult(action, before, self.head(), ahead, behind)
 
     def push(self, ask_credentials=None) -> SyncResult:
@@ -299,15 +369,17 @@ class CliBackend(GitBackend):
             raise GitError(f'no remote {self.remote_name()} configured')
         self._git('fetch', '--quiet', self.remote_name())
 
-    def _ahead_behind(self):
-        out = self._git('rev-list', '--left-right', '--count', f'HEAD...{self._upstream()}', check=False).split()
+    def _ahead_behind(self, target=None):
+        target = target or self._upstream()
+        out = self._git('rev-list', '--left-right', '--count', f'HEAD...{target}', check=False).split()
         return (int(out[0]), int(out[1])) if len(out) == 2 else (0, 0)
 
-    def _merge_remote(self, fast_forward):
+    def _merge_remote(self, fast_forward, target=None):
+        target = target or self._upstream()
         if fast_forward:
-            self._git('merge', '--ff-only', '--quiet', self._upstream())
+            self._git('merge', '--ff-only', '--quiet', target)
             return 'fast-forward'
-        env_res = subprocess.run(['git', '-C', self.root, 'merge', '--no-edit', '--quiet', self._upstream()],
+        env_res = subprocess.run(['git', '-C', self.root, 'merge', '--no-edit', '--quiet', target],
                                  capture_output=True, text=True, encoding='utf-8', errors='replace',
                                  env=dict(os.environ, GIT_TERMINAL_PROMPT='0'))
         if env_res.returncode != 0:
@@ -320,6 +392,12 @@ class CliBackend(GitBackend):
     def _push(self, ask_credentials=None):
         b = self.branch()
         self._git('push', '--quiet', self.remote_name(), f'HEAD:refs/heads/{b}')
+
+    def _create_bundle(self, path):
+        self._git('bundle', 'create', '--quiet', path, f'refs/heads/{self.branch()}')
+
+    def _fetch_bundle(self, path, src, target):
+        self._git('fetch', '--quiet', path, f'+{src}:{target}')
 
 
 class DulwichBackend(GitBackend):
@@ -434,19 +512,21 @@ class DulwichBackend(GitBackend):
             return 0
         return sum(1 for _ in self.repo.get_walker(include=[include], exclude=[exclude] if exclude else []))
 
-    def _ahead_behind(self):
+    def _ahead_behind(self, target=None):
         local = self.repo.head()
+        ref = target.encode() if isinstance(target, str) else (target or self._remote_ref())
         try:
-            remote = self.repo.refs[self._remote_ref()]
+            remote = self.repo.refs[ref]
         except KeyError:
             return self._count(local, None), 0
         return self._count(local, remote), self._count(remote, local)
 
-    def _merge_remote(self, fast_forward):
+    def _merge_remote(self, fast_forward, target=None):
         from dulwich import porcelain
         before = self.repo.head()
+        ref = target.encode() if isinstance(target, str) else (target or self._remote_ref())
         try:
-            merge_commit, conflicts = porcelain.merge(self.repo, self._remote_ref())
+            merge_commit, conflicts = porcelain.merge(self.repo, ref)
         except ImportError as e:
             porcelain.reset(self.repo, 'hard', before)
             raise GitError('both sides changed the same file(s); merging needs the package merge3 or git. '
@@ -472,6 +552,100 @@ class DulwichBackend(GitBackend):
             raise GitError('the remote has new commits: pull first')
         except HangupException as e:
             raise GitError(f'push failed: {e}')
+
+    def _create_bundle(self, path):
+        from dulwich import bundle as dbundle
+        b = dbundle.create_bundle_from_repo(self.repo, refs=[f'refs/heads/{self.branch()}'.encode()])
+        with open(path, 'wb') as f:
+            dbundle.write_bundle(f, b)
+
+    def _fetch_bundle(self, path, src, target):
+        from dulwich import bundle as dbundle
+        with open(path, 'rb') as f:
+            b = dbundle.read_bundle(f)
+            try:
+                for sha in b.prerequisites or []:
+                    sha = sha[0] if isinstance(sha, tuple) else sha
+                    if sha not in self.repo.object_store:
+                        raise GitError(f'{os.path.basename(path)} needs commit {sha.decode()[:7]}, not here')
+                b.store_objects(self.repo.object_store)
+                self.repo.refs[target.encode()] = b.references[src.encode()]
+            finally:
+                b.close()
+
+
+def read_bundle_info(path: str) -> dict:
+    """The information file <bundle>.txt next to a bundle (server, branch, commit, ...), {} if none."""
+    info = {}
+    try:
+        with open(path + '.txt', 'r', encoding='utf-8') as f:
+            for line in f:
+                if ':' in line and not line.startswith('#'):
+                    k, v = line.split(':', 1)
+                    info[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return info
+
+
+def clone_bundle(path: str, target: str, remote_url: typing.Optional[str] = None,
+                 prefer: typing.Optional[str] = None) -> GitBackend:
+    """
+    A new repository in target from a bundle (e.g. on a field computer without network). Its
+    remote origin is remote_url, else the server named in <bundle>.txt (for a later pull and
+    push), else none. Returns the backend of the new repository.
+    """
+    path, target = os.path.abspath(path), os.path.abspath(target)
+    if os.path.exists(target) and os.listdir(target):
+        raise GitError(f'{target} exists and is not empty')
+    url = remote_url or read_bundle_info(path).get('server') or None
+    choice = (prefer or os.environ.get('REDVYPR_GIT') or '').lower()
+    if choice != 'dulwich' and (choice == 'cli' or git_program_available()):
+        res = subprocess.run(['git', 'clone', '--quiet', path, target], capture_output=True, text=True,
+                             encoding='utf-8', errors='replace')
+        if res.returncode != 0:
+            raise GitError(f'clone failed: {res.stderr.strip()}')
+        b = CliBackend(target)
+        if url:
+            b._git('remote', 'set-url', 'origin', url)
+        else:
+            b._git('remote', 'remove', 'origin', check=False)
+        return b
+    # not porcelain.clone(): it fails on bundles of the git program (offset deltas); the objects
+    # are stored directly, the branch is checked out
+    from dulwich import porcelain
+    from dulwich import bundle as dbundle
+    os.makedirs(target, exist_ok=True)
+    repo = porcelain.init(target)
+    with open(path, 'rb') as f:
+        bundle = dbundle.read_bundle(f)
+        try:
+            if bundle.prerequisites:
+                raise GitError(f'{os.path.basename(path)} is incremental, a new repository needs a full bundle')
+            bundle.store_objects(repo.object_store)
+            heads = {k: v for k, v in bundle.references.items() if k.startswith(b'refs/heads/')}
+        finally:
+            bundle.close()
+    if not heads:
+        raise GitError(f'{os.path.basename(path)} has no branch')
+    ref = b'refs/heads/' + read_bundle_info(path).get('branch', '').encode()
+    if ref not in heads:
+        ref = sorted(heads)[0]
+    repo.refs[ref] = heads[ref]
+    repo.refs.set_symbolic_ref(b'HEAD', ref)
+    porcelain.reset(repo, 'hard', heads[ref])
+    b = DulwichBackend(target)
+    cfg = b.repo.get_config()
+    if url:
+        cfg.set((b'remote', b'origin'), b'url', url.encode())
+        cfg.set((b'remote', b'origin'), b'fetch', b'+refs/heads/*:refs/remotes/origin/*')
+    else:
+        try:
+            del cfg[(b'remote', b'origin')]
+        except KeyError:
+            pass
+    cfg.write_to_path()
+    return b
 
 
 def git_program_available() -> bool:

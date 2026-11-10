@@ -530,6 +530,27 @@ def library_file_of(kind: str, address: str, entries) -> str:
     return os.path.join('other', hashlib.sha1(address.encode('utf-8')).hexdigest()[:12] + '.yaml')
 
 
+def find_libraries(folder) -> typing.List[str]:
+    """
+    The item libraries directly in a folder (e.g. a repository): YAML files starting with the
+    library header and directories with the marker redvypr_library.yaml. Sorted.
+    """
+    out = []
+    folder = os.path.abspath(str(folder))
+    for name in sorted(os.listdir(folder)):
+        p = os.path.join(folder, name)
+        if os.path.isdir(p) and os.path.exists(os.path.join(p, LIBRARY_MARKER)):
+            out.append(p)
+        elif os.path.isfile(p) and name.lower().endswith(('.yaml', '.yml')):
+            try:
+                with open(p, 'r', encoding='utf-8') as f:
+                    if f.readline().rstrip('\r\n') == LIBRARY_HEADER:
+                        out.append(p)
+            except OSError:
+                continue
+    return out
+
+
 def type_search_paths(path) -> typing.List[str]:
     """
     Where definitions of unknown item types of a library are searched (redvypr.item_types):

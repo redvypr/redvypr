@@ -1,5 +1,7 @@
 """Git window of the item libraries (redvypr.widgets.redvypr_item_git_widget)."""
 
+import os
+
 import pytest
 from PyQt6 import QtWidgets
 
@@ -108,3 +110,28 @@ def test_credentials_asked_once_and_stored(monkeypatch, tmp_path):
     stored['cred'] = ('peter', 'bad')
     with pytest.raises(ig.GitError, match='cancelled'):
         b._with_credentials(remote_op, lambda host: None)
+
+
+@pytest.mark.parametrize('backend', BACKENDS)
+def test_git_window_bundles(app, tmp_path, backend):
+    home, _field = two_computers(tmp_path)
+    r_home = redvypr.Redvypr(hostname='gitwin_bh')
+    r_home.load_item_library(str(home / 'lib'))              # loaded first: new items go here
+    r_home.load_item_library(str(home / 'inventory.yaml'))
+    wh = gw.RedvyprItemGitWidget(r_home, prefer=backend)
+    out = wh.export_bundle(str(tmp_path / 'b1.bundle'))
+    assert out and 'bundle written' in wh.status.text()
+    # field computer: new repository from the bundle
+    r_field = redvypr.Redvypr(hostname='gitwin_bf')
+    wf = gw.RedvyprItemGitWidget(r_field, prefer=backend)
+    libs = wf.clone_bundle(out, str(tmp_path / 'fieldrepo'))
+    assert [os.path.basename(p) for p in libs] == ['lib', 'inventory.yaml']      # order of home
+    assert r_field.get_item('gadget/G2') is not None and wf.repos.rowCount() == 1
+    r_field.add_item(items.Item(itemtype='gadget', id='F8', name='field'), valid_from='2026-11-03T00:00:00+00:00')
+    wf.commit('field: F8')
+    back = wf.export_bundle(str(tmp_path / 'b2.bundle'))
+    res = wh.import_bundle(back)
+    assert res.action == 'fast-forward' and r_home.get_item('gadget/F8').name == 'field'
+    assert (tmp_path / 'fieldrepo' / 'lib' / 'items' / 'gadget' / 'F8.yaml').exists()
+    for w in (wh, wf):
+        w.close()
