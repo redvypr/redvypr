@@ -32,6 +32,8 @@ dependencies = ['pyaml',
 	     'pytz',
 	     'psycopg[binary]',
 	     'pytest',
+	     'dulwich',
+	     'keyring',
 	     ]
 requires-python = ">=3.7"
 readme = "README.md"

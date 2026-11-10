@@ -540,6 +540,24 @@ Storage and exchange
   the table ``redvypr_metadata`` (the format of the databases written by
   redvypr, so a database reader sees them too); saving replaces only the
   item addresses, other metadata and tables of the file stay.
+* **git from redvypr** (``redvypr.item_git``): the libraries are kept in a
+  git repository (e.g. ``inventory_redvypr``); redvypr shows the changes of
+  the item files and commits them, so ``pip install redvypr`` works without
+  an installed git: two backends with the same interface, the git program if
+  installed (its configuration and credentials), else dulwich (pure Python,
+  a dependency of redvypr; environment ``REDVYPR_GIT=cli|dulwich`` forces
+  one). Only the item files are staged and committed
+  (``Redvypr.item_git_paths()``: libraries, attachment folder, files of the
+  data types, default files like ``calibrations.yaml``); a commit is refused
+  if other changes are staged already. Status 2026-11-10: status and commit
+  implemented (``Redvypr.item_git_status()``, ``item_git_commit()``). Planned:
+  pull and push (HTTPS with a personal access token kept in the system key
+  store via ``keyring`` when dulwich is used; pull before editing, check for
+  new commits before push; a real conflict stops with the files named),
+  git bundles for field computers without network (one file with the
+  commits, carried there and back), a "Git" area in the Items window. A ZIP
+  of the libraries stays an option for read-only copies (e.g. the state of
+  the inventory with a measurement campaign).
 * **Directory libraries** for collections that grow by adding (sensors,
   calibrations): a directory with one YAML file per address, at a path made
   of its kind and names, e.g. ``items/heatflow_classic/0614.yaml``,

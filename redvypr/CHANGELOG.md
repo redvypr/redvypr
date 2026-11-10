@@ -26,6 +26,10 @@ redvypr changelog
   `HeatflowClassicCalibration.raw2data()` (mV x `calibration_HF_SI`, W m-2); profile channels
   name their raw unit (`raw_unit`, hf0/hf1: V), converted into the input unit of the calibration
   by SI prefix (`item_calibration.unit_factor()`).
+- git for the item libraries (`redvypr.item_git`): status and commit of the item files
+  (`Redvypr.item_git_paths()`, `item_git_status()`, `item_git_commit()`), with the git program if
+  installed, else dulwich (pure Python); new dependencies `dulwich` and `keyring` (for the push
+  token, planned), so `pip install redvypr` works without git.
 - Directory libraries: an item library can be a directory with one YAML file per item, item type
   and calibration (`items/<type>/<id>.yaml`, `item_types/<name>.yaml`,
   `calibrations/<sensor model>/<sn>/<date>_<uuid8>.yaml`, marker `redvypr_library.yaml`); saving

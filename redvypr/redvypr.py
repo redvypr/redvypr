@@ -1660,6 +1660,48 @@ class Redvypr(QtCore.QObject):
         folder = os.path.dirname(os.path.abspath(self.item_libraries[0])) if self.item_libraries else os.getcwd()
         return os.path.join(folder, ritem_attachments.DEFAULT_FOLDER)
 
+    def item_git_paths(self) -> list:
+        """
+        The files and directories of the items that belong into git: the item libraries, the
+        attachment folder, the files of the item types defined as data and the default files
+        of new entries (e.g. calibrations.yaml). See redvypr.item_git.
+        """
+        import redvypr.item_types as ritem_types
+        paths = [os.path.abspath(p) for p in self.item_libraries]
+        paths.append(self.item_attachments_folder())
+        for name, src in ritem_types.TYPE_SOURCES.items():
+            if src and name in ritem_types.DATA_TYPES:
+                paths.append(os.path.abspath(src))
+        paths += [os.path.abspath(p) for p in self.library_default_files().values()]
+        out = []
+        for p in paths:
+            if p not in out:
+                out.append(p)
+        return out
+
+    def item_git_status(self, prefer=None) -> dict:
+        """
+        {repository root: (backend, [FileChange])}: the changes of the item files
+        (item_git_paths()) per git repository; files outside repositories are left out.
+        """
+        import redvypr.item_git as ritem_git
+        out = {}
+        for root, (backend, paths) in ritem_git.group_by_repo(self.item_git_paths(), prefer=prefer).items():
+            out[root] = (backend, backend.status(paths))
+        return out
+
+    def item_git_commit(self, message: str, prefer=None) -> dict:
+        """
+        Saves the item libraries and commits the changes of the item files in every git
+        repository they are in. Returns {repository root: commit id or None (nothing to commit)}.
+        """
+        import redvypr.item_git as ritem_git
+        self.save_item_libraries()
+        out = {}
+        for root, (backend, paths) in ritem_git.group_by_repo(self.item_git_paths(), prefer=prefer).items():
+            out[root] = backend.commit(paths, message)
+        return out
+
     def library_default_files(self) -> dict:
         """
         {kind: path} of the files for new entries of a kind no library holds yet, next to the
