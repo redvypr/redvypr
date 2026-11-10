@@ -267,14 +267,21 @@ def library_owner(entries) -> typing.Optional[str]:
     return None
 
 
-def assign_library_entries(storage: dict, libraries: typing.List[str]) -> dict:
+# File of the new entries of a kind if no library holds that kind yet (next to the first library)
+DEFAULT_LIBRARY_FILES = {'calibration': 'calibrations.yaml'}
+
+
+def assign_library_entries(storage: dict, libraries: typing.List[str],
+                           defaults: typing.Optional[typing.Dict[str, str]] = None) -> dict:
     """
     {library path: [addresses]}: where every library address of a storage is saved. An
     address goes back to the file it was loaded from; a new one (not from a library) to the
     first library already holding entries of its kind (item or calibration), else to the
-    first library. Addresses of a library file not in the list are left out.
+    file defaults[kind] (e.g. calibrations.yaml), else to the first library. Addresses of a
+    library file not in the list are left out.
     """
     libraries = list(libraries or [])
+    defaults = dict(defaults or {})
     by_name = {}
     for path in libraries:
         by_name.setdefault(os.path.basename(path), path)
@@ -290,9 +297,11 @@ def assign_library_entries(storage: dict, libraries: typing.List[str]) -> dict:
             out[by_name[owner]].append(addr)
             kinds_of[by_name[owner]].add(kind)
     for addr, kind in new:
-        target = next((p for p in libraries if kind in kinds_of[p]), libraries[0] if libraries else None)
+        target = next((p for p in libraries if kind in kinds_of[p]), None)
+        if target is None:
+            target = defaults.get(kind) or (libraries[0] if libraries else None)
         if target is not None:
-            out[target].append(addr)
+            out.setdefault(target, []).append(addr)
     return out
 
 

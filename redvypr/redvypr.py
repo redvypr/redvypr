@@ -105,6 +105,9 @@ class RedvyprConfig(pydantic.BaseModel):
                                                                 'data from (e.g. by the XY plot), used by their name')
     item_libraries: typing.List[str] = pydantic.Field(default=[], description='Item library files (YAML), '
                                                       'loaded into the metadata at the start (redvypr.items)')
+    item_attachments_path: typing.Optional[str] = pydantic.Field(
+        default=None, description='Folder of the attachments of items (photos, reports); default: the folder '
+                                  '"attachments" next to the first item library')
     item_type_paths: typing.List[str] = pydantic.Field(
         default=[], description='Directories (or files) searched for definitions of item types not known '
                                 '(redvypr.item_types), besides the directories of the item libraries')
@@ -526,6 +529,7 @@ class Redvypr(QtCore.QObject):
                                                       metadata_sources=self._reader_metadata_sources)
         self.item_libraries = []        # item library files (redvypr.metadata_sources)
         self.item_type_paths = list(getattr(config, 'item_type_paths', None) or [])  # see redvypr.item_types
+        self.item_attachments_path = getattr(config, 'item_attachments_path', None)  # see redvypr.item_attachments
         self.properties = {}  # Properties that are distributed with the device
         self.numdevice = 0
         self.devices = []  # List containing dictionaries with information about all attached devices
@@ -670,7 +674,8 @@ class Redvypr(QtCore.QObject):
                                redvyp_version=version, date_created=str(datetime.datetime.utcnow()),
                                devices=devices, datasources=[d.model_copy() for d in self.datasources],
                                item_libraries=list(self.item_libraries),
-                               item_type_paths=list(self.item_type_paths))
+                               item_type_paths=list(self.item_type_paths),
+                               item_attachments_path=self.item_attachments_path)
 
         return config
 
@@ -1644,9 +1649,49 @@ class Redvypr(QtCore.QObject):
             self.load_item_library(loaded[0])
         return path
 
+    def item_attachments_folder(self) -> str:
+        """Folder of the attachments of items: configured, else 'attachments' next to the first library."""
+        if self.item_attachments_path:
+            return os.path.abspath(self.item_attachments_path)
+        import redvypr.item_attachments as ritem_attachments
+        folder = os.path.dirname(os.path.abspath(self.item_libraries[0])) if self.item_libraries else os.getcwd()
+        return os.path.join(folder, ritem_attachments.DEFAULT_FOLDER)
+
+    def library_default_files(self) -> dict:
+        """
+        {kind: path} of the files for new entries of a kind no library holds yet, next to the
+        first YAML library (redvypr.metadata_sources.DEFAULT_LIBRARY_FILES, e.g. calibrations.yaml).
+        """
+        yaml_libs = [p for p in self.item_libraries if not redvypr_metadata_sources.is_sqlite_library(p)]
+        if not yaml_libs:
+            return {}
+        folder = os.path.dirname(os.path.abspath(yaml_libs[0]))
+        return {kind: os.path.join(folder, name)
+                for kind, name in redvypr_metadata_sources.DEFAULT_LIBRARY_FILES.items()}
+
     def save_item_libraries(self) -> dict:
-        """Saves every loaded library file (save_item_library()); {path: number of addresses}."""
-        return {path: self.save_item_library(path) for path in list(self.item_libraries)}
+        """
+        Saves every loaded library file (save_item_library()); new entries of a kind no library
+        holds yet go into its default file (library_default_files(), e.g. calibrations.yaml next
+        to the first library; an existing file is loaded first, so its contents stay).
+        Returns {path: number of addresses}.
+        """
+        defaults = self.library_default_files()
+        storage = self._copy_metadata()
+        assigned = redvypr_metadata_sources.assign_library_entries(storage, self.item_libraries, defaults)
+        for path, addrs in assigned.items():
+            if addrs and path not in self.item_libraries:
+                if os.path.exists(path):
+                    self.load_item_library(path)
+                else:
+                    self.item_libraries.append(path)
+        storage = self._copy_metadata()
+        assigned = redvypr_metadata_sources.assign_library_entries(storage, self.item_libraries, defaults)
+        saved = {}
+        for path in list(self.item_libraries):
+            saved[path] = redvypr_metadata_sources.save_item_library(path, storage,
+                                                                     addresses=set(assigned.get(path, [])))
+        return saved
 
     def _reader_metadata_sources(self):
         """Further metadata of the database readers: this instance with its item libraries."""

@@ -15,6 +15,11 @@ redvypr changelog
   serial number and type (`sensor_model` = item type, `NA`: any). `get_items()` gives the
   ancestors of the sensor (`FoundItems.ancestors`), `items.param_from()` searches a circuit
   parameter (e.g. `R1`) along them, so an NTC inside a heat flux sensor takes R1 of the breakout.
+  Step 2: Items window with tabs "History", "Calibrations" (calibrations of the item by serial
+  number and type, the valid one marked, "Import calibration ..." creating missing sensor items,
+  "Remove calibration"; new calibrations saved into `calibrations.yaml` next to the first library)
+  and "Attachments" (files in `attachments/<itemtype>/<id>/<uuid>/`, configuration
+  `item_attachments_path`; module `redvypr.item_attachments`).
 - Item types as data (`redvypr.item_types`, design note section "Item types as data"): a type
   defined in the metadata at `@i:'itemtype' and d:'<type>'` / in the section `item_types` of a
   library file (short form `<type>: {description, base, revision, fields, defaults, renamed}`)
@@ -205,6 +210,8 @@ redvypr changelog
 - db writer status (sqlite, timescale): the lower table is "Written per table and address" with the table
   type; packet tables (redvypr_datapacket) show no flat column ("–"), only data_flat tables have one per address
 ### Fixed
+- `HeatflowClassicCalibration` without `calibration_uuid` failed (uuid5 with a text namespace);
+  its `sensor_model` is the item type `heatflow_classic` (the series stays the field `series`).
 - `ot_cli`: single-value answers (`ot state`, `channel`, `rloc16`, ...) only accept a line of the expected
   form; a log line of the firmware split into the response no longer shows up as Thread role of the gateway
 - db writer config widget: field "UID keys" per table; before, applying the configuration in the GUI

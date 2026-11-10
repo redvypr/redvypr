@@ -12,7 +12,7 @@ import types
 import typing
 
 import yaml
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 import redvypr.items as ritems
 import redvypr.item_types as ritem_types
@@ -22,7 +22,9 @@ logger = logging.getLogger('redvypr.widgets.items')
 ROLE_REF = QtCore.Qt.ItemDataRole.UserRole + 1
 UTC = datetime.timezone.utc
 # Fields not edited in the form (address, bookkeeping)
-FORM_SKIP = ('itemtype', 'id', 'type_revision')
+FORM_SKIP = ('itemtype', 'id', 'type_revision', 'attachments')
+# Fields not edited in the form but in their own tab: taken over from the stored item when saving
+MANAGED_FIELDS = ('attachments',)
 
 
 LIBRARY_FILTER = ('Item library (*.yaml *.yml *.sqlite *.sqlite3 *.db);;YAML (*.yaml *.yml);;'
@@ -272,8 +274,66 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         rlay.addWidget(form_scroll, 2)
         rlay.addLayout(addf)
         rlay.addLayout(save)
-        rlay.addWidget(QtWidgets.QLabel('History'))
-        rlay.addWidget(self.history, 1)
+        # calibrations of the item (serial number and type)
+        self.calibrations = QtWidgets.QTableWidget(0, 7)
+        self.calibrations.setHorizontalHeaderLabels(['Date', 'Valid', 'Type', 'Channel', 'Coefficients',
+                                                     'Unit', 'Sensor model'])
+        self.calibrations.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.calibrations.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.calibrations.horizontalHeader().setStretchLastSection(True)
+        self.calibrations.setToolTip('Calibrations with the serial number of the item and its type as sensor '
+                                     'model (NA: any type); "valid": the one used at the state time')
+        self.btn_import_cal = QtWidgets.QPushButton('Import calibration ...')
+        self.btn_import_cal.setToolTip('Read calibrations (YAML of the sensor manager); a calibration without '
+                                       'serial number takes that of the selected item; missing sensor items '
+                                       'are created. "Save libraries" stores them (calibrations.yaml).')
+        self.btn_remove_cal = QtWidgets.QPushButton('Remove calibration')
+        self.btn_import_cal.clicked.connect(lambda: self.import_calibration())
+        self.btn_remove_cal.clicked.connect(lambda: self.remove_calibration())
+        cal_tab = QtWidgets.QWidget()
+        cl = QtWidgets.QVBoxLayout(cal_tab)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.addWidget(self.calibrations, 1)
+        cb = QtWidgets.QHBoxLayout()
+        cb.addWidget(self.btn_import_cal)
+        cb.addWidget(self.btn_remove_cal)
+        cb.addStretch(1)
+        cl.addLayout(cb)
+
+        # attachments of the item (files in the attachment folder)
+        self.attachments = QtWidgets.QTableWidget(0, 4)
+        self.attachments.setHorizontalHeaderLabels(['File', 'Description', 'Size', 'Added'])
+        self.attachments.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.attachments.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.attachments.horizontalHeader().setStretchLastSection(True)
+        self.attachments.doubleClicked.connect(lambda _i: self.open_attachment())
+        self.btn_add_att = QtWidgets.QPushButton('Add file ...')
+        self.btn_open_att = QtWidgets.QPushButton('Open')
+        self.btn_folder_att = QtWidgets.QPushButton('Open folder')
+        self.btn_remove_att = QtWidgets.QPushButton('Remove')
+        self.btn_add_att.clicked.connect(lambda: self.add_attachment())
+        self.btn_open_att.clicked.connect(lambda: self.open_attachment())
+        self.btn_folder_att.clicked.connect(lambda: self.open_attachment(folder=True))
+        self.btn_remove_att.clicked.connect(lambda: self.remove_attachment())
+        att_tab = QtWidgets.QWidget()
+        al = QtWidgets.QVBoxLayout(att_tab)
+        al.setContentsMargins(0, 0, 0, 0)
+        self.att_folder = QtWidgets.QLabel('')
+        self.att_folder.setStyleSheet('color: gray;')
+        self.att_folder.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        al.addWidget(self.attachments, 1)
+        ab = QtWidgets.QHBoxLayout()
+        for b in (self.btn_add_att, self.btn_open_att, self.btn_folder_att, self.btn_remove_att):
+            ab.addWidget(b)
+        ab.addStretch(1)
+        al.addLayout(ab)
+        al.addWidget(self.att_folder)
+
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.addTab(self.history, 'History')
+        self.tabs.addTab(cal_tab, 'Calibrations')
+        self.tabs.addTab(att_tab, 'Attachments')
+        rlay.addWidget(self.tabs, 1)
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         splitter.addWidget(left)
@@ -409,9 +469,14 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         enabled = item is not None
         for w in (self.btn_save, self.btn_copy, self.btn_move, self.btn_add_field, self.new_key, self.valid_from):
             w.setEnabled(enabled)
+        for w in (self.btn_remove_cal, self.btn_add_att, self.btn_open_att, self.btn_folder_att,
+                  self.btn_remove_att):
+            w.setEnabled(enabled)
         if item is None:
             self.title.setText('No item selected')
             self.history.setRowCount(0)
+            self.calibrations.setRowCount(0)
+            self.attachments.setRowCount(0)
             return
         cls = type(item)
         rev = f', revision {item.type_revision}' if item.type_revision else ''
@@ -432,6 +497,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             self._add_row(key, value, None, 'additional field')
         self.valid_from.setDateTime(_qdt(now_utc()))
         self.show_history(item.ref)
+        self.show_calibrations(item)
+        self.show_attachments(item)
 
     def _add_row(self, key, value, base, tip=None, unit=None):
         edit = QtWidgets.QLineEdit(value_to_text(value))
@@ -459,6 +526,10 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         old = self.redvypr.get_item(self.current_ref, at_time=self.time())
         if old is not None and old.type_revision:
             data['type_revision'] = old.type_revision
+        for key in MANAGED_FIELDS:
+            value = getattr(old, key, None) if old is not None else None
+            if value:
+                data[key] = [v.model_dump(mode='json') if hasattr(v, 'model_dump') else v for v in value]                     if isinstance(value, list) else value
         for key, (edit, base) in self.form_fields.items():
             try:
                 value = text_to_value(edit.text(), base)
@@ -492,6 +563,174 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
                                         c.get('valid_until') or '', src)):
                 self.history.setItem(row, col, QtWidgets.QTableWidgetItem(str(text)))
         self.history.resizeColumnsToContents()
+
+    # --- calibrations ---
+    def show_calibrations(self, item):
+        from redvypr.devices.sensors.calibration import item_calibration as ic
+        storage = self.redvypr._copy_metadata()
+        try:
+            cals = ic.calibrations_of_item(storage, item)
+        except Exception:
+            logger.warning('could not read the calibrations', exc_info=True)
+            cals = []
+        at = self.time()
+        valid = ic.select_calibration(cals, ic.item_sn(item), '', at, itemtype=item.itemtype) if cals else None
+        self.calibrations.setRowCount(len(cals))
+        for row, c in enumerate(cals):
+            date = getattr(c, 'date', None)
+            texts = (date.isoformat(sep=' ', timespec='seconds') if hasattr(date, 'isoformat') else str(date or ''),
+                     'yes' if c is valid else '', getattr(c, 'calibration_type', ''),
+                     str(getattr(c, 'channel', '') or ''), ic.calibration_summary(c),
+                     str(getattr(c, 'unit', '') or ''), str(getattr(c, 'sensor_model', '') or ''))
+            for col, text in enumerate(texts):
+                cell = QtWidgets.QTableWidgetItem(text)
+                cell.setData(QtCore.Qt.ItemDataRole.UserRole, getattr(c, 'calibration_uuid', ''))
+                cell.setToolTip(getattr(c, 'comment', None) or '')
+                self.calibrations.setItem(row, col, cell)
+        self.calibrations.resizeColumnsToContents()
+        return cals
+
+    def import_calibration(self, path=None):
+        from redvypr.devices.sensors.calibration import item_calibration as ic
+        if not path:
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Import calibration', '',
+                                                            'YAML (*.yaml *.yml);;All files (*)')
+        if not path:
+            return None
+        item = self.redvypr.get_item(self.current_ref, at_time=self.time()) if self.current_ref else None
+        try:
+            cals = ic.read_calibration_file(path)
+            report = ic.import_calibrations(self.redvypr, cals, item=item)
+        except Exception as e:
+            self.set_status(f'{os.path.basename(path)} not imported: {e}', error=True)
+            return None
+        created = [ref for _c, ref, new in report if new]
+        missing = [c for c, ref, _new in report if ref is None]
+        text = f'{len(report)} calibration(s) imported'
+        if created:
+            text += ', sensor items created: ' + ', '.join(created)
+        if missing:
+            text += f'; {len(missing)} without serial number or sensor type (not assigned)'
+        self.set_status(text + '. "Save libraries" stores them.', error=bool(missing))
+        self.refresh()
+        if item is not None:
+            self.set_item(self.redvypr.get_item(item.ref, at_time=self.time()))
+        return report
+
+    def remove_calibration(self, calibration_uuid=None, confirm=None):
+        from redvypr.devices.sensors.calibration import item_calibration as ic
+        if calibration_uuid is None:
+            row = self.calibrations.currentRow()
+            cell = self.calibrations.item(row, 0) if row >= 0 else None
+            calibration_uuid = cell.data(QtCore.Qt.ItemDataRole.UserRole) if cell is not None else None
+        if not calibration_uuid:
+            self.set_status('select a calibration first', error=True)
+            return False
+        text = f'Remove the calibration {calibration_uuid} from this redvypr instance? A library file loses it ' \
+               'at the next "Save libraries".'
+        if confirm is None:
+            ok = QtWidgets.QMessageBox.question(self, 'Remove calibration', text) == \
+                QtWidgets.QMessageBox.StandardButton.Yes
+        else:
+            ok = confirm(text)
+        if not ok:
+            return False
+        n = ic.remove_calibration(self.redvypr, calibration_uuid)
+        self.set_status(f'calibration removed ({n} address{"es" if n != 1 else ""})' if n else
+                        'calibration not found', error=not n)
+        if self.current_ref:
+            self.set_item(self.redvypr.get_item(self.current_ref, at_time=self.time()))
+        return bool(n)
+
+    # --- attachments ---
+    def attachments_folder(self) -> str:
+        return self.redvypr.item_attachments_folder()
+
+    def show_attachments(self, item):
+        import redvypr.item_attachments as ia
+        atts = ia.attachments_of(item)
+        base = self.attachments_folder()
+        self.att_folder.setText(f'Folder: {base}')
+        self.attachments.setRowCount(len(atts))
+        for row, a in enumerate(atts):
+            size = a.file_size_bytes
+            size_text = f'{size / 1e6:.1f} MB' if size >= 1e6 else f'{size / 1e3:.0f} kB'
+            path = ia.attachment_path(base, item, a)
+            for col, text in enumerate((a.file_name, a.description or '', size_text, (a.added or '')[:19])):
+                cell = QtWidgets.QTableWidgetItem(text)
+                cell.setData(QtCore.Qt.ItemDataRole.UserRole, a.attachment_uuid)
+                cell.setToolTip(path if os.path.exists(path) else f'missing: {path}')
+                if not os.path.exists(path):
+                    cell.setForeground(QtGui.QColor('red'))
+                self.attachments.setItem(row, col, cell)
+        self.attachments.resizeColumnsToContents()
+        return atts
+
+    def _selected_attachment(self):
+        row = self.attachments.currentRow()
+        cell = self.attachments.item(row, 0) if row >= 0 else None
+        return cell.data(QtCore.Qt.ItemDataRole.UserRole) if cell is not None else None
+
+    def add_attachment(self, path=None, description=None):
+        import redvypr.item_attachments as ia
+        item = self.redvypr.get_item(self.current_ref, at_time=self.time()) if self.current_ref else None
+        if item is None:
+            return None
+        if not path:
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(self, f'Attach a file to {item.ref}', '',
+                                                            'All files (*)')
+            if not path:
+                return None
+            description, ok = QtWidgets.QInputDialog.getText(self, 'Attachment', 'Description (optional)')
+            if not ok:
+                return None
+        try:
+            att = ia.add_attachment(self.redvypr, item, path, self.attachments_folder(), description=description)
+        except Exception as e:
+            self.set_status(f'{os.path.basename(str(path))} not attached: {e}', error=True)
+            return None
+        self.set_status(f'{att.file_name} attached to {item.ref} ("Save libraries" stores the list)')
+        self.set_item(self.redvypr.get_item(item.ref, at_time=self.time()))
+        return att
+
+    def open_attachment(self, folder=False, attachment_uuid=None):
+        import redvypr.item_attachments as ia
+        item = self.redvypr.get_item(self.current_ref, at_time=self.time()) if self.current_ref else None
+        if item is None:
+            return None
+        base = self.attachments_folder()
+        attachment_uuid = attachment_uuid or self._selected_attachment()
+        att = next((a for a in ia.attachments_of(item) if a.attachment_uuid == attachment_uuid), None)
+        if att is None:
+            target = os.path.join(base, item.itemtype, item.id) if folder else None
+        else:
+            target = ia.attachment_dir(base, item, att.attachment_uuid) if folder else \
+                ia.attachment_path(base, item, att)
+        if not target or not os.path.exists(target):
+            self.set_status(f'not found: {target or "select an attachment"}', error=True)
+            return None
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(target))
+        return target
+
+    def remove_attachment(self, attachment_uuid=None, confirm=None):
+        import redvypr.item_attachments as ia
+        item = self.redvypr.get_item(self.current_ref, at_time=self.time()) if self.current_ref else None
+        attachment_uuid = attachment_uuid or self._selected_attachment()
+        if item is None or not attachment_uuid:
+            self.set_status('select an attachment first', error=True)
+            return False
+        text = 'Remove the attachment and delete its file from the attachment folder?'
+        if confirm is None:
+            ok = QtWidgets.QMessageBox.question(self, 'Remove attachment', text) == \
+                QtWidgets.QMessageBox.StandardButton.Yes
+        else:
+            ok = confirm(text)
+        if not ok:
+            return False
+        done = ia.remove_attachment(self.redvypr, item, attachment_uuid, self.attachments_folder())
+        self.set_item(self.redvypr.get_item(item.ref, at_time=self.time()))
+        self.set_status('attachment removed' if done else 'attachment not found', error=not done)
+        return done
 
     # --- actions ---
     def new_item(self, copy=False):

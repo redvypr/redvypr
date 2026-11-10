@@ -17,6 +17,8 @@ from .calibration_models import CalibrationGeneric, CalibrationLinearFactor, Cal
 logger = logging.getLogger("redvypr.sensor_definitions")
 
 class AttachmentMetadata(BaseModel):
+    # further keys of the attachments of the Items window (description, added) are kept
+    model_config = ConfigDict(extra='allow')
     attachment_uuid: uuid.UUID = Field(default_factory=uuid.uuid4)
     file_name: str
     mime_type: str
@@ -272,7 +274,7 @@ class HeatflowClassicCalibration(BaseModel):
             seed = f"{self.manufacturer_sn}|{date_str}|{val_str}"
 
             # UUIDv5 generieren
-            pure_uuid = str(uuid.uuid5(MY_CALIBRATION_NAMESPACE, seed))
+            pure_uuid = str(uuid.uuid5(uuid.UUID(MY_CALIBRATION_NAMESPACE), seed))
             self.calibration_uuid = f"CALHFC_{pure_uuid}"
         return self
 
@@ -280,7 +282,8 @@ class HeatflowClassicCalibration(BaseModel):
 
     @property
     def sensor_model(self):
-        return self.series
+        """The item type of the sensor (heatflow_classic); the series is the field series."""
+        return HeatflowClassicSensor.ITEMTYPE
 
     @property
     def date(self):

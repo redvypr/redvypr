@@ -355,7 +355,7 @@ choice "converted with items" in the plots.
 Sensors, calibrations and the sensor manager
 --------------------------------------------
 
-Status 2026-11-10: concept; step 1 implemented. No backward compatibility
+Status 2026-11-10: concept; steps 1 and 2 implemented. No backward compatibility
 needed (only one user, no stored data with the old formats).
 
 **A sensor is an item.** The sensors of the sensor manager (``BaseSensor``
@@ -422,9 +422,20 @@ Steps:
    dropped; ``date_produced`` optional; the duplicate ``hf_sensor`` of the
    norlog module removed; calibrations found by serial number and type;
    circuit parameters searched along the ancestors.
-2. Items window: area "Calibrations" of the selected item (by serial number
-   and type) with "Import calibration ..." (creates the sensor item if
-   missing, ``from_calibration()``); attachments for all items.
+2. Items window (done 2026-11-10): tabs "History", "Calibrations" and
+   "Attachments". "Calibrations": the calibrations of the selected item
+   (serial number and type), the one valid at the state time marked;
+   "Import calibration ..." reads a YAML file of the sensor manager (a
+   calibration without serial number or type takes them from the selected
+   item, else the type comes from ``sensor_model`` or the calibration type;
+   missing sensor items are created, a heat flux sensor with
+   ``from_calibration()``); "Remove calibration". New calibrations are
+   saved into ``calibrations.yaml`` next to the first library (default file
+   of the kind, ``DEFAULT_LIBRARY_FILES``). "Attachments" for all items:
+   files copied to ``attachments/<itemtype>/<id>/<uuid>/`` next to the first
+   library (configuration ``item_attachments_path``), listed in the field
+   ``attachments`` (file name, description, size, sha256, time added; not
+   edited in the form); open, open folder, remove (with the file).
 3. Sensor manager: the sensor table opens the Items window; plots, reports
    and autocalibration work on the calibrations of the metadata.
 4. Convert existing sensor lists and calibration files once into libraries.

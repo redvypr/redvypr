@@ -190,6 +190,136 @@ def apply_calibration(storage: dict, address, raw, at_time=None, calibrations=No
     return res
 
 
+# --- calibrations of an item (Items window: area "Calibrations") ----------------------------
+
+# Item type of the sensor of a calibration type, if the calibration does not name it
+# (sensor_model NA): used to create the sensor item when a calibration is imported
+CALIBRATION_ITEMTYPES = {
+    'heatflow_classic': 'heatflow_classic',
+    'ntc': 'ntc_sensor',
+}
+
+
+def item_sn(item) -> str:
+    """Serial number of an item (its sn, else its id)."""
+    return getattr(item, 'sn', None) or item.id
+
+
+def calibrations_of_item(storage: dict, item, calibrations=None) -> list:
+    """The calibrations of an item (serial number and type), oldest first."""
+    if calibrations is None:
+        calibrations = calibrations_from_metadata(storage)
+    sn = item_sn(item)
+    cals = [c for c in calibrations if getattr(c, 'sn', None) == sn and calibration_fits_type(c, item.itemtype)]
+    return sorted(cals, key=lambda c: _aware(getattr(c, 'date', None)) or datetime.datetime.min.replace(tzinfo=UTC))
+
+
+def calibration_summary(cal) -> str:
+    """Short text of the coefficients of a calibration."""
+    for key in ('coeff', 'coeffs', 'calibration_HF_SI'):
+        value = getattr(cal, key, None)
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple, np.ndarray)):
+            return f'{key} = [' + ', '.join(f'{v:.6g}' for v in list(value)[:4]) + (', ...]' if len(value) > 4 else ']')
+        try:
+            return f'{key} = {float(value):.6g}'
+        except (TypeError, ValueError):
+            return f'{key} = {value}'
+    return ''
+
+
+def calibration_metadict(cal) -> dict:
+    """Metadata of a calibration for Redvypr.set_metadata_from_dict(): {address: {'calibration': ...}}."""
+    return {cal.create_redvypr_address().to_address_string(): {'calibration': cal.model_dump(mode='json')}}
+
+
+def read_calibration_file(path) -> list:
+    """The calibrations of a YAML file (one or several documents) of the sensor manager."""
+    import yaml
+    from .sensor_and_calibration_definitions import CalibrationFactory
+    cals = []
+    with open(path, 'r', encoding='utf-8') as f:
+        for data in yaml.safe_load_all(f):
+            if data is None:
+                continue
+            for d in (data if isinstance(data, list) else [data]):
+                cals.append(CalibrationFactory.create(d))
+    return cals
+
+
+def _set_if_field(cal, key, value):
+    """Sets a field of a calibration model (not a property)."""
+    if key in type(cal).model_fields:
+        setattr(cal, key, value)
+        return True
+    return False
+
+
+def import_calibrations(redvypr_instance, calibrations, item=None) -> list:
+    """
+    Puts calibrations into the metadata of a redvypr instance; their sensor items are created if
+    missing. item: the selected item; a calibration without serial number or type takes them from it.
+    The item type of a sensor: sensor_model of the calibration, else the type of the selected item
+    (same serial number), else CALIBRATION_ITEMTYPES of the calibration type.
+    Returns [(calibration, sensor reference or None, created: bool)].
+    """
+    from redvypr import items as ritems_
+    report = []
+    for cal in calibrations:
+        sn = getattr(cal, 'sn', None)
+        if item is not None and sn in NO_MODEL:
+            _set_if_field(cal, 'sn', item_sn(item))
+            sn = getattr(cal, 'sn', None)
+        model = getattr(cal, 'sensor_model', None)
+        itemtype = None
+        if model not in NO_MODEL:
+            itemtype = model
+        elif item is not None and sn == item_sn(item):
+            itemtype = item.itemtype
+            _set_if_field(cal, 'sensor_model', itemtype)
+        else:
+            itemtype = CALIBRATION_ITEMTYPES.get(getattr(cal, 'calibration_type', None))
+            if itemtype:
+                _set_if_field(cal, 'sensor_model', itemtype)
+        ref, created = None, False
+        if sn not in NO_MODEL and itemtype:
+            ref = ritems_.make_ref(itemtype, sn)
+            if redvypr_instance.get_item(ref, builtin=False) is None:
+                sensor = _new_sensor_item(itemtype, sn, cal)
+                when = _aware(getattr(cal, 'date', None))
+                redvypr_instance.add_item(sensor, valid_from=when)
+                created = True
+        redvypr_instance.set_metadata_from_dict(calibration_metadict(cal))
+        report.append((cal, ref, created))
+    return report
+
+
+def _new_sensor_item(itemtype, sn, cal):
+    from redvypr import items as ritems_
+    from .sensor_and_calibration_definitions import HeatflowClassicSensor, HeatflowClassicCalibration
+    if itemtype == HeatflowClassicSensor.ITEMTYPE and isinstance(cal, HeatflowClassicCalibration):
+        return HeatflowClassicSensor.from_calibration(cal, name=cal.name or None, sn=sn)
+    return ritems_.get_item_type(itemtype)(itemtype=itemtype, id=sn)
+
+
+def remove_calibration(redvypr_instance, calibration_uuid: str) -> int:
+    """Removes a calibration (by its uuid) from the metadata of a redvypr instance; number of addresses."""
+    import redvypr.redvypr_datadict as data_packets
+    removed = {}
+    for addr, entries in redvypr_instance._copy_metadata().items():
+        for e in entries or []:
+            v = e.get('value') if isinstance(e, dict) else None
+            if e.get('key') == 'calibration' and isinstance(v, dict) and v.get('calibration_uuid') == calibration_uuid:
+                removed[addr] = {'keys': ['calibration'], 'mode': 'exact'}
+    if removed:
+        packet = data_packets.commandpacket(command='reply')
+        packet['_metadata_remove'] = removed
+        redvypr_instance.redvyprqueue.put(packet)
+        redvypr_instance.redvyprreplyqueue.get()
+    return len(removed)
+
+
 def change_times(storage: dict, calibrations, t_start: float, t_end: float) -> list:
     """Times (unix) in (t_start, t_end] at which metadata entries or calibrations begin or end."""
     times = set()
