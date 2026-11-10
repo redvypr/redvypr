@@ -90,6 +90,8 @@ class RedvyprMetadataWindow(QtWidgets.QWidget):
         self.items = RedvyprItemsWidget(redvypr_instance=self.redvypr, embedded=True)
         self.types = RedvyprItemTypesWidget(redvypr_instance=self.redvypr)
         self.types.types_changed.connect(self._types_changed)
+        self.types.items_requested.connect(self.show_items_of_type)
+        self.items.type_requested.connect(self.show_type)
         self.items.tree.itemSelectionChanged.connect(self._item_selected)
         self.calibrations = self._make_calibrations_tab()
         self.tabs = QtWidgets.QTabWidget()
@@ -139,6 +141,20 @@ class RedvyprMetadataWindow(QtWidgets.QWidget):
         self.items.set_item(it)
         self._select_in_tree(ref)
         return it
+
+    def show_type(self, name: str) -> bool:
+        """Shows an item type in the tab Item types."""
+        self.show_tab('Item types')
+        return self.types.select_type(name)
+
+    def show_items_of_type(self, name: str):
+        """The tab Items with the items of a type (type filter)."""
+        self.show_tab('Items')
+        self.items.refresh()
+        i = self.items.type_filter.findData(name)
+        if i >= 0:
+            self.items.type_filter.setCurrentIndex(i)
+        return i >= 0
 
     def _select_in_tree(self, ref):
         from redvypr.widgets.redvypr_items_widget import ROLE_REF

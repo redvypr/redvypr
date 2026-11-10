@@ -13,6 +13,8 @@ redvypr changelog
   asked; "Query ..."), Items, Item types and Calibrations (new: all calibrations with their sensor
   item, the valid one, the library; filter, import, remove, create sensor item, show sensor).
   `item_calibration.calibration_entries()`. Tools menu "Query metadata ..." for the query tool.
+  Cross links: the type in the title of an item opens it in the tab Item types, "Show items" in the
+  type editor shows the items of the type, a calibration shows its sensor.
 - Sensors and calibrations (design note section "Sensors, calibrations and the sensor manager",
   step 1): sensor types of the sensor manager named per model in English (`heatflow_classic`,
   `tar_sensor`, `base_sensor`), field `sensortype` removed (the `SensorFactory` uses `itemtype`,

@@ -169,6 +169,9 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
     new values from a time on) and its history.
     """
 
+    # the item type in the title was clicked (name of the type)
+    type_requested = QtCore.pyqtSignal(str)
+
     def __init__(self, redvypr_instance, parent=None, embedded: bool = False):
         """embedded: part of the Metadata window, which has the libraries, git, types and the time."""
         super().__init__(parent)
@@ -253,7 +256,10 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
 
         # --- right: form and history
         self.title = QtWidgets.QLabel('')
-        self.title.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.title.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse |
+                                           QtCore.Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.title.setOpenExternalLinks(False)
+        self.title.linkActivated.connect(self._title_link)
         self.form_widget = QtWidgets.QWidget()
         self.form = QtWidgets.QFormLayout(self.form_widget)
         form_scroll = QtWidgets.QScrollArea()
@@ -466,6 +472,16 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         if self.types_widget is not None:
             self.types_widget.set_item(self.redvypr.get_item(ref, at_time=self.time()) if ref else None)
 
+    def _title_link(self, link: str):
+        """A link in the title: 'type:<name>' shows the type (signal type_requested, or the type editor)."""
+        if not link.startswith('type:'):
+            return
+        name = link[len('type:'):]
+        if self.embedded:
+            self.type_requested.emit(name)
+        else:
+            self.open_types().select_type(name)
+
     def open_types(self):
         """Opens the editor of the item types (the selected item for "From item")."""
         from redvypr.widgets.redvypr_item_types_widget import RedvyprItemTypesWidget
@@ -526,7 +542,9 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             kind = 'type not defined: generic Item'
         else:
             kind = cls.__name__
-        self.title.setText(f'<b>{item.ref}</b> ({kind}{rev})<br>{item.address}')
+        self.title.setText(f'<b>{item.ref}</b> (<a href="type:{item.itemtype}">{item.itemtype}</a>: '
+                           f'{kind}{rev})<br>{item.address}')
+        self.title.setToolTip('Click the type to see its definition')
         for key, finfo in cls.model_fields.items():
             if key in FORM_SKIP:
                 continue

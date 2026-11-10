@@ -128,3 +128,36 @@ def test_main_window_button(tmp_path):
     win.close()
     m.hide()          # not close(): the main window ends the program (sys.exit)
     assert app is not None
+
+
+def test_cross_links_between_items_and_types(window):
+    r, w = window
+    # item -> type: the link in the title of the item
+    w.show_item('heatflow_classic/HF1')
+    assert 'href="type:heatflow_classic"' in w.items.title.text()
+    w.items._title_link('type:heatflow_classic')
+    assert w.tabs.tabText(w.tabs.currentIndex()) == 'Item types'
+    assert w.types.current == 'heatflow_classic' and w.types.list.currentItem().text(0) == 'heatflow_classic'
+    # type -> items: "Show items" filters the tab Items to the type
+    assert w.types.btn_items.isEnabled()
+    w.types.btn_items.click()
+    assert w.tabs.tabText(w.tabs.currentIndex()) == 'Items'
+    assert w.items.type_filter.currentData() == 'heatflow_classic'
+    refs = [w.items.tree.topLevelItem(i).text(0) for i in range(w.items.tree.topLevelItemCount())]
+    assert refs == ['heatflow_classic/HF1']
+    # a type without definition (generic Item): message in the type editor
+    r.add_item(items.Item(itemtype='undefined_type_q7', id='G'), valid_from=T0)
+    assert not w.show_type('undefined_type_q7')
+    assert 'not defined' in w.types.status.text()
+
+
+def test_type_link_in_the_items_window_alone(window):
+    r, _w = window
+    from redvypr.widgets.redvypr_items_widget import RedvyprItemsWidget
+    iw = RedvyprItemsWidget(redvypr_instance=r)
+    iw.current_ref = 'ntc_sensor/N1'
+    iw.set_item(r.get_item('ntc_sensor/N1'))
+    iw._title_link('type:ntc_sensor')
+    assert iw.types_widget is not None and iw.types_widget.current == 'ntc_sensor'
+    iw.types_widget.close()
+    iw.close()

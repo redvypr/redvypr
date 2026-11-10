@@ -480,12 +480,17 @@ all tabs (libraries: load file/folder, save as, list; "Save libraries";
 * **Items**: the Items window embedded (tree or flat list, form, history,
   calibrations and attachments of the item).
 * **Item types**: the type editor; "From item" takes the item selected in
-  the tab Items.
+  the tab Items; "Show items" shows the items of the type in the tab Items
+  (type filter).
 * **Calibrations**: all calibrations with their sensor item (``—`` if none
   matches serial number and type), the one valid at the state time, the
   library; filter (text, valid only, without sensor item), import, remove,
   "Create sensor item", "Show sensor" / double click shows the sensor in
   the tab Items.
+
+Cross links: the item type in the title of an item is a link to the type in
+the tab Item types (in the Items window alone: the type editor opens); a type
+without definition (generic Item) says so and points to "From item".
 
 Performance: item index (planned)
 ---------------------------------

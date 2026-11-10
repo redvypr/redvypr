@@ -66,6 +66,8 @@ class RedvyprItemTypesWidget(QtWidgets.QWidget):
     """Editor of the item types."""
 
     types_changed = QtCore.pyqtSignal()
+    # "Show items": the items of the type shown (name of the type)
+    items_requested = QtCore.pyqtSignal(str)
 
     def __init__(self, redvypr_instance, parent=None, item: typing.Optional[ritems.Item] = None):
         super().__init__(parent)
@@ -85,6 +87,9 @@ class RedvyprItemTypesWidget(QtWidgets.QWidget):
         self.btn_from_item.setToolTip('Propose a type from the item selected in the Items window: its additional '
                                       'fields become fields of the type')
         self.btn_refresh = QtWidgets.QPushButton('Refresh')
+        self.btn_items = QtWidgets.QPushButton('Show items')
+        self.btn_items.setToolTip('The items of this type in the tab Items')
+        self.btn_items.clicked.connect(lambda: self.items_requested.emit(self.current) if self.current else None)
         self.btn_new.clicked.connect(lambda: self.new_type())
         self.btn_copy.clicked.connect(lambda: self.copy_type())
         self.btn_from_item.clicked.connect(lambda: self.type_from_item(self._item))
@@ -96,7 +101,7 @@ class RedvyprItemTypesWidget(QtWidgets.QWidget):
         llay.setContentsMargins(0, 0, 0, 0)
         llay.addWidget(self.list, 1)
         bl = QtWidgets.QHBoxLayout()
-        for b in (self.btn_new, self.btn_copy, self.btn_from_item, self.btn_refresh):
+        for b in (self.btn_new, self.btn_copy, self.btn_from_item, self.btn_items, self.btn_refresh):
             bl.addWidget(b)
         llay.addLayout(bl)
 
@@ -296,6 +301,19 @@ class RedvyprItemTypesWidget(QtWidgets.QWidget):
         folder = os.path.dirname(os.path.abspath(libs[0])) if libs else os.getcwd()
         return os.path.join(folder, DEFAULT_TYPE_FILE)
 
+    def select_type(self, name: str) -> bool:
+        """Shows a type and selects it in the list (False if it is not known)."""
+        self.refresh()
+        for i in range(self.list.topLevelItemCount()):
+            w = self.list.topLevelItem(i)
+            if w.data(0, QtCore.Qt.ItemDataRole.UserRole) == name:
+                self.list.setCurrentItem(w)
+                self.set_type(name)
+                return True
+        self.set_status(f'the type {name} is not defined (generic Item): "From item" proposes a definition',
+                        error=True)
+        return False
+
     def selection_changed(self):
         w = self.list.currentItem()
         name = w.data(0, QtCore.Qt.ItemDataRole.UserRole) if w is not None else None
@@ -311,6 +329,7 @@ class RedvyprItemTypesWidget(QtWidgets.QWidget):
         self.defaults.setRowCount(0)
         self.renamed.setRowCount(0)
         enabled = name is not None or defn is not None
+        self.btn_items.setEnabled(name is not None and not new)
         for w in (self.name, self.description, self.base, self.revision, self.fields, self.defaults,
                   self.renamed, self.btn_save, self.btn_add_field, self.btn_del_field, self.btn_add_default,
                   self.btn_del_default, self.btn_add_renamed, self.btn_del_renamed, self.btn_copy):
