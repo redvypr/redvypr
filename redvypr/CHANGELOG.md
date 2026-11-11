@@ -7,6 +7,12 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- A saved configuration stores the location of the item libraries, not their contents:
+  `save_config()` leaves out the entries that come only from the loaded libraries
+  (`metadata_sources.strip_library_entries()`), the libraries are loaded from their files when the
+  configuration is applied; copies of library entries in older configurations are ignored. Before,
+  the configuration held a copy of every item, type and calibration (4.4 MB for the inventory), and
+  an item deleted in the library came back from that copy at the start.
 - Progress while loading item libraries: a dialog with the file being read and its count, the
   following steps and a Cancel button appears if loading takes longer than 0.3 s (Metadata
   window, Items window, Git window for pull, bundle import and new repository); cancelling changes

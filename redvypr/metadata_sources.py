@@ -468,6 +468,33 @@ def directory_library_files(path: str) -> typing.List[str]:
     return out
 
 
+def strip_library_entries(storage: dict, libraries) -> dict:
+    """
+    A copy of a metadata storage without the entries that come only from the given libraries
+    (paths or names): they are in the library files and loaded from there, so a configuration
+    stores the location of a library, not its contents. Entries without such a source (made in
+    this instance, not saved in a library yet, or from other sources) stay, addresses without
+    entries are left out.
+    """
+    names = {library_name(p) for p in libraries or []}
+    prefixes = {f'library:{n}' for n in names}
+    out = {}
+    for addr, entries in (storage or {}).items():
+        if not isinstance(entries, list):
+            out[addr] = entries
+            continue
+        keep = []
+        for e in entries:
+            srcs = [str(x).split(' (', 1)[0] for x in sources_of((e or {}).get('constraints'))] \
+                if isinstance(e, dict) else []
+            if srcs and all(x in prefixes for x in srcs):
+                continue
+            keep.append(e)
+        if keep:
+            out[addr] = keep
+    return out
+
+
 class LoadCancelled(Exception):
     """Raised by a progress callback to stop loading a library (nothing is changed)."""
 

@@ -548,8 +548,11 @@ class Redvypr(QtCore.QObject):
             for k in config.metadata.keys():
                 logger.debug(f'Adding {k} metadata entry')
             # Storage format {address: [entries]} or simple {address: {key: value}}
-            metadata_init = {'_metadata': redvypr.metadata.normalize_metadata(config.metadata,
-                                                                             hostinfo=self.hostinfo)}
+            # entries of item libraries in an older configuration (copies) are not taken: the
+            # libraries are loaded from their files below
+            metadata_init = {'_metadata': redvypr_metadata_sources.strip_library_entries(
+                redvypr.metadata.normalize_metadata(config.metadata, hostinfo=self.hostinfo),
+                config.item_libraries)}
             status_statistics = redvypr.metadata.do_metadata(
                 metadata_init, self.deviceinfo_all)
             #print("Hallo",self.deviceinfo_all)
@@ -616,7 +619,9 @@ class Redvypr(QtCore.QObject):
             self.add_devices_from_config(redvypr_config, rename_if_exists=False)
         if use_metadata:
             logger.debug(f"Applying metadata:{redvypr_config.metadata=}")
-            self.set_metadata_from_dict(redvypr_config.metadata)
+            self.set_metadata_from_dict(redvypr_metadata_sources.strip_library_entries(
+                redvypr.metadata.normalize_metadata(redvypr_config.metadata, hostinfo=self.hostinfo),
+                getattr(redvypr_config, 'item_libraries', None)))
             logger.debug(funcname + 'Adding metadata done')
         for datasource in redvypr_config.datasources or []:
             self.add_datasource(datasource)
@@ -704,7 +709,10 @@ class Redvypr(QtCore.QObject):
         if add_metadata:
             # The stored entries with their history and constraints (get_metadata()
             # would give only the current values); loaded again by normalize_metadata()
-            data_save['metadata'] = self._copy_metadata()
+            # without the entries of the loaded item libraries: the configuration stores their
+            # location (item_libraries) and they are loaded from there when it is applied
+            data_save['metadata'] = redvypr_metadata_sources.strip_library_entries(
+                self._copy_metadata(), self.item_libraries)
 
         if fname:
             logger.debug('Saving to file {:s}'.format(fname))

@@ -488,6 +488,16 @@ all tabs (libraries: load file/folder, save as, list; "Save libraries";
   "Create sensor item", "Show sensor" / double click shows the sensor in
   the tab Items.
 
+**Configuration and libraries.** A saved configuration stores the location of
+the item libraries (``item_libraries``), not their contents: ``save_config()``
+leaves out the entries that come only from the loaded libraries
+(``metadata_sources.strip_library_entries()``), keeps the generic metadata
+and the changes not saved into a library yet, and applying the configuration
+loads the libraries from their files. Library entries in an older
+configuration (copies) are ignored at the start. So the files are the only
+source: an item deleted in the library (e.g. by a git pull) stays gone, and
+the configuration stays small.
+
 Loading a library shows a progress dialog (``widgets.load_progress``) if it
 takes longer than 0.3 s: the file being read with its count ("Reading library
 (470 / 2612)"), then "Adding to the metadata", "Building the item tree/the
