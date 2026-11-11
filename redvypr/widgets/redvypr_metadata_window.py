@@ -23,6 +23,8 @@ import typing
 
 from PyQt6 import QtCore, QtWidgets
 
+from redvypr.widgets.load_progress import LoadProgress
+
 logger = logging.getLogger('redvypr.widgets.metadata_window')
 
 TABS = ('Generic', 'Items', 'Item types', 'Calibrations')
@@ -235,9 +237,19 @@ class RedvyprMetadataWindow(QtWidgets.QWidget):
             a.setEnabled(False)
 
     def load_library(self, path=None, folder=False):
-        self.items.load_library(path=path, folder=folder)
-        self.refresh()
-        self.status.setText(self.items.status.text())
+        """Loads a library with a progress dialog that also covers building the tabs."""
+        path = path or self.items.choose_library(folder)
+        if not path:
+            return
+        name = os.path.basename(os.path.normpath(path))
+        with LoadProgress(self, f'Loading {name}') as progress:
+            n = self.items.load_library(path=path, progress=progress)
+            if n is not None:
+                progress('Building the tabs', 0, 0)
+                self.refresh()
+                self.items.set_status(f'{n} items loaded from {path} in {progress.elapsed:.1f} s')
+        self.update_status(self.items.status.text())
+        return n
 
     def save_libraries(self):
         try:

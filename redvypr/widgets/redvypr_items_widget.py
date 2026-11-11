@@ -16,6 +16,8 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 import redvypr.items as ritems
 import redvypr.item_types as ritem_types
+from redvypr.metadata_sources import LoadCancelled
+from redvypr.widgets.load_progress import LoadProgress
 
 logger = logging.getLogger('redvypr.widgets.items')
 
@@ -904,20 +906,44 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.set_item(self.redvypr.get_item(item.ref, at_time=self.time()))
         return True
 
-    def load_library(self, path=None, folder=False):
-        if not path and folder:
+    def choose_library(self, folder=False):
+        """Asks for a library (file or, with folder, a directory); None if cancelled."""
+        if folder:
             path = QtWidgets.QFileDialog.getExistingDirectory(self, 'Load library folder', '')
-        elif not path:
+        else:
             path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Load item library', '', LIBRARY_FILTER)
+        return path or None
+
+    def load_library(self, path=None, folder=False, progress=None):
+        """
+        Loads a library (a file, or a directory with folder=True) with a progress dialog that
+        appears if it takes longer than a moment (progress: an existing LoadProgress, e.g. of the
+        Metadata window, which then also covers the work after the loading). Returns the number of
+        addresses loaded, None if cancelled, failed or no library was chosen.
+        """
+        path = path or self.choose_library(folder)
         if not path:
-            return
+            return None
+        name = os.path.basename(os.path.normpath(path))
+        own = progress is None
+        progress = LoadProgress(self, f'Loading {name}') if own else progress
+        self.set_status(f'loading {name} ...')
         try:
-            n = self.redvypr.load_item_library(path)
+            n = self.redvypr.load_item_library(path, progress=progress)
+            progress('Building the item tree', 0, 0)
+            self.refresh()
+            seconds = progress.elapsed
+        except LoadCancelled:
+            self.set_status(f'loading of {name} cancelled, nothing changed')
+            return None
         except Exception as e:
             self.set_status(f'{path} not loaded: {e}', error=True)
-            return
-        self.set_status(f'{n} items loaded from {path}')
-        self.refresh()
+            return None
+        finally:
+            if own:
+                progress.close()
+        self.set_status(f'{n} items loaded from {path} in {seconds:.1f} s')
+        return n
 
     def save_library(self, path=None):
         if not path:

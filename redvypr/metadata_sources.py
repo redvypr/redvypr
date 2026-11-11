@@ -468,9 +468,17 @@ def directory_library_files(path: str) -> typing.List[str]:
     return out
 
 
-def _read_directory_library(path: str) -> dict:
+class LoadCancelled(Exception):
+    """Raised by a progress callback to stop loading a library (nothing is changed)."""
+
+
+def _read_directory_library(path: str, progress=None) -> dict:
     storage = {}
-    for f in directory_library_files(path):
+    files = directory_library_files(path)
+    name = library_name(path)
+    for i, f in enumerate(files):
+        if progress is not None:
+            progress(f'Reading {name}', i, len(files))
         try:
             part = _read_yaml_library(f)
         except Exception:
@@ -478,16 +486,20 @@ def _read_directory_library(path: str) -> dict:
             continue
         for a, entries in part.items():
             storage.setdefault(a, []).extend(entries)
+    if progress is not None:
+        progress(f'Reading {name}', len(files), len(files))
     return storage
 
 
-def read_library_storage(path: str) -> dict:
+def read_library_storage(path: str, progress=None) -> dict:
     """
     The library entries of a library (YAML file, SQLite file or directory) as storage, without
     source tags and without registering types (e.g. to change a file and write it again).
+    progress: callback progress(text, done, total) called for every file of a directory library
+    (it may raise LoadCancelled).
     """
     if is_directory_library(path):
-        return _read_directory_library(path) if os.path.isdir(str(path)) else {}
+        return _read_directory_library(path, progress) if os.path.isdir(str(path)) else {}
     if is_sqlite_library(path):
         storage = redvypr_metadata.normalize_metadata(_read_sqlite_items(path))
         return {a: e for a, (_k, e) in library_entries(storage).items()}
@@ -568,15 +580,15 @@ def type_search_paths(path) -> typing.List[str]:
     return out
 
 
-def load_item_library(path: str, type_paths=None) -> dict:
+def load_item_library(path: str, type_paths=None, progress=None) -> dict:
     """
     Storage of an item library, entries tagged 'library:<name>'. Only library addresses
     (items, item types, calibrations) are taken. A YAML file (storage format {address:
     [entries]} or simple format {address: {key: value}}, or sections), an SQLite file (suffix
     .sqlite, .sqlite3, .db; table redvypr_metadata as written by redvypr) or a directory
-    library (one file per address, see library_file_of()).
+    library (one file per address, see library_file_of()). progress: see read_library_storage().
     """
-    storage = read_library_storage(path)
+    storage = read_library_storage(path, progress=progress)
     # item types defined in the library: usable right away; types of its items not known yet
     # are searched next to it (type_search_paths()) and in type_paths
     import redvypr.item_types as ritem_types

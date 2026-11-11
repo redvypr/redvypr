@@ -1556,13 +1556,21 @@ class Redvypr(QtCore.QObject):
         """All stored entries of an item."""
         return redvypr_items.get_item_history(self._copy_metadata(), ref)
 
-    def load_item_library(self, path: str) -> int:
+    def load_item_library(self, path: str, progress=None) -> int:
         """
-        Loads an item library file (YAML) into the metadata; its entries carry the
-        source 'library:<file name>'. Loading the same file again adds nothing.
-        Returns the number of items in the file.
+        Loads an item library (YAML file, SQLite file or directory) into the metadata; its
+        entries carry the source 'library:<name>'. Loading the same library again adds nothing.
+        progress: callback progress(text, done, total) (e.g. widgets.load_progress.LoadProgress);
+        it may raise LoadCancelled: everything is read before the metadata change, so nothing is
+        changed then. Returns the number of addresses in the library.
         """
-        storage = redvypr_metadata_sources.load_item_library(path, type_paths=self.item_type_paths)
+        storage = redvypr_metadata_sources.load_item_library(path, type_paths=self.item_type_paths,
+                                                             progress=progress)
+        return self._add_library_storage(path, storage, progress)
+
+    def _add_library_storage(self, path: str, storage: dict, progress=None) -> int:
+        if progress is not None:
+            progress('Adding to the metadata', 0, 0)
         datapacket = redvypr.data_packets.commandpacket(command='reply')
         datapacket['_metadata'] = storage
         self.redvyprqueue.put(datapacket)
@@ -1702,13 +1710,18 @@ class Redvypr(QtCore.QObject):
             out[root] = backend.commit(paths, message)
         return out
 
-    def reload_item_library(self, path: str) -> int:
+    def reload_item_library(self, path: str, progress=None) -> int:
         """
-        Loads a library again after its files changed (e.g. a git pull): the entries loaded from
-        it are removed from the metadata first, so entries deleted in the files are gone as well.
-        Entries of this instance not saved yet are lost: save the libraries first.
+        Loads a library again after its files changed (e.g. a git pull): the library is read
+        first (progress, LoadCancelled: nothing changed), then the entries loaded from it are
+        removed from the metadata and the new ones added, so entries deleted in the files are
+        gone as well. Entries of this instance not saved yet are lost: save the libraries first.
         Returns the number of addresses loaded.
         """
+        storage = redvypr_metadata_sources.load_item_library(path, type_paths=self.item_type_paths,
+                                                             progress=progress)
+        if progress is not None:
+            progress('Replacing the old entries', 0, 0)
         name = redvypr_metadata_sources.library_name(path)
         remove = {}
         for addr, (_kind, entries) in redvypr_metadata_sources.library_entries(self._copy_metadata()).items():
@@ -1719,9 +1732,9 @@ class Redvypr(QtCore.QObject):
             datapacket['_metadata_remove'] = remove
             self.redvyprqueue.put(datapacket)
             self.redvyprreplyqueue.get()
-        return self.load_item_library(path)
+        return self._add_library_storage(path, storage, progress)
 
-    def item_git_pull(self, ask_credentials=None, prefer=None) -> dict:
+    def item_git_pull(self, ask_credentials=None, prefer=None, progress=None) -> dict:
         """
         Saves the libraries, then pulls every git repository of the item files
         (redvypr.item_git: needs committed files) and loads the libraries in a repository
@@ -1740,7 +1753,7 @@ class Redvypr(QtCore.QObject):
             if res.changed:
                 for lib in list(self.item_libraries):
                     if ritem_git.find_repo(lib) == root:
-                        self.reload_item_library(lib)
+                        self.reload_item_library(lib, progress=progress)
         return out
 
     def item_git_push(self, ask_credentials=None, prefer=None) -> dict:
@@ -1767,7 +1780,7 @@ class Redvypr(QtCore.QObject):
         libs = [lib for lib in self.item_libraries if ritem_git.find_repo(lib) == backend.root]
         return backend.create_bundle(path, libraries=libs)
 
-    def item_git_import_bundle(self, root: str, path: str, prefer=None):
+    def item_git_import_bundle(self, root: str, path: str, prefer=None, progress=None):
         """
         Brings the commits of a bundle into the repository root like a pull (needs committed
         files) and loads its libraries again if it changed. Returns the SyncResult.
@@ -1781,10 +1794,10 @@ class Redvypr(QtCore.QObject):
         if res.changed:
             for lib in list(self.item_libraries):
                 if ritem_git.find_repo(lib) == backend.root:
-                    self.reload_item_library(lib)
+                    self.reload_item_library(lib, progress=progress)
         return res
 
-    def item_git_clone_bundle(self, path: str, target: str, remote_url=None, prefer=None) -> list:
+    def item_git_clone_bundle(self, path: str, target: str, remote_url=None, prefer=None, progress=None) -> list:
         """
         A new repository in target from a bundle (field computer); its libraries (YAML files and
         library directories directly in it) are loaded. Returns the paths of the libraries.
@@ -1800,7 +1813,7 @@ class Redvypr(QtCore.QObject):
             if os.path.normcase(p) not in [os.path.normcase(x) for x in libs]:
                 libs.append(p)
         for lib in libs:
-            self.load_item_library(lib)
+            self.load_item_library(lib, progress=progress)
         return libs
 
     def library_default_files(self) -> dict:

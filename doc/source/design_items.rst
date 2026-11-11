@@ -488,6 +488,15 @@ all tabs (libraries: load file/folder, save as, list; "Save libraries";
   "Create sensor item", "Show sensor" / double click shows the sensor in
   the tab Items.
 
+Loading a library shows a progress dialog (``widgets.load_progress``) if it
+takes longer than 0.3 s: the file being read with its count ("Reading library
+(470 / 2612)"), then "Adding to the metadata", "Building the item tree/the
+tabs"; Cancel stops it, and nothing is changed because a library is read
+completely before the metadata change (``progress(text, done, total)`` of
+``load_item_library()``, ``reload_item_library()``, ``item_git_pull()``,
+``item_git_import_bundle()``, ``item_git_clone_bundle()``; a callback may
+raise ``LoadCancelled``). The status line then says how long it took.
+
 Cross links: the item type in the title of an item is a link to the type in
 the tab Item types (in the Items window alone: the type editor opens); a type
 without definition (generic Item) says so and points to "From item".

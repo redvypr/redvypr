@@ -7,6 +7,13 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- Progress while loading item libraries: a dialog with the file being read and its count, the
+  following steps and a Cancel button appears if loading takes longer than 0.3 s (Metadata
+  window, Items window, Git window for pull, bundle import and new repository); cancelling changes
+  nothing. `progress(text, done, total)` of `Redvypr.load_item_library()`, `reload_item_library()`
+  (reads first, then replaces the old entries), `item_git_pull()`, `item_git_import_bundle()`,
+  `item_git_clone_bundle()`; `metadata_sources.LoadCancelled`; `widgets.load_progress.LoadProgress`.
+  The status line shows the loading time.
 - Heat flux sensor type named `hf_sensor` (calibration type `hf_sensor`, classes `HfSensor`,
   `HfCalibration`, `HfCalibData`; the generation "classic" is the field `hw_revision`).
 - Metadata window (button "Metadata" in the main window, Tools menu "Metadata ..."; replaces

@@ -10,6 +10,8 @@ import typing
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 import redvypr.item_git as ritem_git
+from redvypr.metadata_sources import LoadCancelled
+from redvypr.widgets.load_progress import LoadProgress
 
 logger = logging.getLogger('redvypr.widgets.item_git')
 
@@ -218,11 +220,24 @@ class RedvyprItemGitWidget(QtWidgets.QWidget):
 
     def _sync(self, what: str):
         func = self.redvypr.item_git_pull if what == 'pull' else self.redvypr.item_git_push
+        kwargs = {}
+        progress = None
+        if what == 'pull':
+            progress = LoadProgress(self, 'Pull')
+            progress('Pull: asking the server', 0, 0)
+            kwargs['progress'] = progress
         self._busy(True)
         try:
-            res = func(ask_credentials=self.ask_credentials, prefer=self.prefer)
+            res = func(ask_credentials=self.ask_credentials, prefer=self.prefer, **kwargs)
+        except LoadCancelled:
+            self.refresh()
+            self.set_status('pull: reloading the libraries cancelled; the files are updated, '
+                            'the libraries in redvypr are not (load them again)', error=True)
+            return None
         finally:
             self._busy(False)
+            if progress is not None:
+                progress.close()
         texts, error, changed = [], False, False
         for root, r in res.items():
             name = os.path.basename(root)
@@ -274,14 +289,19 @@ class RedvyprItemGitWidget(QtWidgets.QWidget):
             path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Import bundle', '', 'git bundle (*.bundle)')
         if not path:
             return None
+        progress = LoadProgress(self, 'Import bundle')
         self._busy(True)
         try:
-            res = self.redvypr.item_git_import_bundle(root, path, prefer=self.prefer)
+            res = self.redvypr.item_git_import_bundle(root, path, prefer=self.prefer, progress=progress)
+        except LoadCancelled:
+            self.set_status('bundle imported, reloading the libraries cancelled (load them again)', error=True)
+            return None
         except Exception as e:
             self.set_status(f'bundle not imported: {e}', error=True)
             return None
         finally:
             self._busy(False)
+            progress.close()
         self.refresh()
         self.set_status(f'{os.path.basename(path)}: {res.action}')
         if res.changed:
@@ -298,14 +318,19 @@ class RedvyprItemGitWidget(QtWidgets.QWidget):
             target = QtWidgets.QFileDialog.getExistingDirectory(self, 'Empty folder for the new repository')
         if not target:
             return None
+        progress = LoadProgress(self, 'New repository from bundle')
         self._busy(True)
         try:
-            libs = self.redvypr.item_git_clone_bundle(path, target, prefer=self.prefer)
+            libs = self.redvypr.item_git_clone_bundle(path, target, prefer=self.prefer, progress=progress)
+        except LoadCancelled:
+            self.set_status('repository made, loading the libraries cancelled (load them again)', error=True)
+            return None
         except Exception as e:
             self.set_status(f'no repository made: {e}', error=True)
             return None
         finally:
             self._busy(False)
+            progress.close()
         self.refresh()
         self.set_status(f'repository {target} made, libraries loaded: ' +
                         ', '.join(os.path.basename(p) for p in libs) +
