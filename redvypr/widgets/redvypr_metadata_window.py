@@ -227,7 +227,7 @@ class RedvyprMetadataWindow(QtWidgets.QWidget):
         m.addAction('Load library folder ...', lambda: self.load_library(folder=True))
         m.addAction('Save library as ...', lambda: self.items.save_library())
         m.addSeparator()
-        libs = list(self.redvypr.item_libraries)
+        libs = list(self.redvypr.metadata_libraries)
         if not libs:
             a = m.addAction('(no library loaded)')
             a.setEnabled(False)
@@ -253,7 +253,7 @@ class RedvyprMetadataWindow(QtWidgets.QWidget):
 
     def save_libraries(self):
         try:
-            saved = self.redvypr.save_item_libraries()
+            saved = self.redvypr.save_metadata_libraries()
         except Exception as e:
             self.status.setText(f'not saved: {e}')
             return None
@@ -292,6 +292,6 @@ class RedvyprMetadataWindow(QtWidgets.QWidget):
     def update_status(self, prefix: str = ''):
         """Status line: the loaded libraries (and a message)."""
         libs = [os.path.basename(os.path.normpath(p)) + ('/' if os.path.isdir(p) else '')
-                for p in self.redvypr.item_libraries]
+                for p in self.redvypr.metadata_libraries]
         text = 'Libraries: ' + (', '.join(libs) if libs else 'none loaded')
         self.status.setText(f'{prefix} | {text}' if prefix else text)

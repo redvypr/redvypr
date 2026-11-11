@@ -93,10 +93,10 @@ def test_library_file_roundtrip(tmp_path):
     items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X'), valid_from=T1)
     s.update(storage_with("temp @ d:'ctd_01'", {'unit': 'degC'}))     # not an item: not in the file
     path = str(tmp_path / 'items.yaml')
-    assert ms.save_item_library(path, s) == 1
+    assert ms.save_metadata_library(path, s) == 1
     text = open(path, encoding='utf-8').read()
     assert 'hostinfo' not in text and 'ctd_01' not in text
-    lib = ms.load_item_library(path)
+    lib = ms.load_metadata_library(path)
     assert list(lib) == [BO]
     assert all(e['constraints']['source'] == 'library:items.yaml' for e in lib[BO])
     assert items.get_item(lib, 'breakout_board_v01/BO-003', at_time=T2).comment is None
@@ -123,26 +123,26 @@ def test_dbreader_uses_further_sources(tmp_path):
     reader.close()
 
 
-def test_redvypr_item_library(tmp_path):
+def test_redvypr_metadata_library(tmp_path):
     import redvypr
     path = str(tmp_path / 'lib.yaml')
     s = {}
     items.add_item(s, items.Item(itemtype='gadget', id='1', mpn='M'), valid_from=T0)
-    ms.save_item_library(path, s)
+    ms.save_metadata_library(path, s)
     r = redvypr.Redvypr(hostname='libtest')
-    assert r.load_item_library(path) == 1
-    assert r.load_item_library(path) == 1           # again: nothing new
+    assert r.load_metadata_library(path) == 1
+    assert r.load_metadata_library(path) == 1           # again: nothing new
     assert len(r.get_item_history('gadget/1')) == 2   # mpn, type_revision
     r.add_item(items.Item(itemtype='gadget', id='1', mpn='M', batch='B'), valid_from=T1)
-    assert r.save_item_library() == 1
-    lib = ms.load_item_library(path)
+    assert r.save_metadata_library() == 1
+    lib = ms.load_metadata_library(path)
     assert items.get_item(lib, 'gadget/1', at_time=T2).batch == 'B'
-    assert r.get_config().item_libraries == [path]
+    assert r.get_config().metadata_libraries == [path]
     with pytest.raises(ValueError):
-        redvypr.Redvypr(hostname='libtest2').save_item_library()
+        redvypr.Redvypr(hostname='libtest2').save_metadata_library()
 
 
-def test_sqlite_item_library(tmp_path):
+def test_sqlite_metadata_library(tmp_path):
     # Items in an SQLite file (e.g. inventory.sqlite): table redvypr_metadata, other metadata stays
     from redvypr.datasource import DataSourceConfig, SqliteReader
     from redvypr.serialize import serialize_json
@@ -151,24 +151,24 @@ def test_sqlite_item_library(tmp_path):
     s = {}
     items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X'), valid_from=T0)
     s.update(storage_with(other, {'unit': 'degC'}))
-    assert ms.save_item_library(path, s) == 1
+    assert ms.save_metadata_library(path, s) == 1
     con = sqlite3.connect(path)
     con.execute('INSERT INTO redvypr_metadata (redvypr_address, uuid, metadata) VALUES (?, ?, ?)',
                 (other, 'u', serialize_json(storage_with(other, {'unit': 'degC'})[other])))
     con.commit()
     con.close()
-    lib = ms.load_item_library(path)
+    lib = ms.load_metadata_library(path)
     assert list(lib) == [BO]
     assert all(e['constraints']['source'] == 'library:inventory.sqlite' for e in lib[BO])
     assert items.get_item(lib, 'breakout_board_v01/BO-003', at_time=T1).mpn == 'X'
     # saved again with a change: the item is replaced, the other address stays
     items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X', batch='B'), valid_from=T1)
-    assert ms.save_item_library(path, s) == 1
+    assert ms.save_metadata_library(path, s) == 1
     con = sqlite3.connect(path)
     rows = sorted(r[0] for r in con.execute('SELECT redvypr_address FROM redvypr_metadata'))
     con.close()
     assert rows == sorted([BO, other])
-    assert items.get_item(ms.load_item_library(path), 'breakout_board_v01/BO-003', at_time=T2).batch == 'B'
+    assert items.get_item(ms.load_metadata_library(path), 'breakout_board_v01/BO-003', at_time=T2).batch == 'B'
     # a normal database reader sees the items as well
     reader = SqliteReader(DataSourceConfig(name='inv', filepath=path))
     assert reader.get_metadata(BO, at_time=T2)['batch'] == 'B'
@@ -176,7 +176,7 @@ def test_sqlite_item_library(tmp_path):
     # missing file: error on load, created on save
     import pytest
     with pytest.raises(FileNotFoundError):
-        ms.load_item_library(str(tmp_path / 'none.sqlite'))
+        ms.load_metadata_library(str(tmp_path / 'none.sqlite'))
 
 
 def test_several_libraries_with_calibrations(tmp_path):
@@ -196,18 +196,18 @@ def test_several_libraries_with_calibrations(tmp_path):
     cals = str(tmp_path / 'calibrations.yaml')
     s = {}
     items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X'), valid_from=T0)
-    ms.save_item_library(inv, s)
+    ms.save_metadata_library(inv, s)
     c1 = ntc('NTC-1')
     a1 = c1.create_redvypr_address().to_address_string()
     s = {}
     md.add_metadata_to_entries(md.create_metadata_dict(a1, {'calibration': c1.model_dump()}, valid_from=T0), s)
-    assert ms.save_item_library(cals, s) == 1
+    assert ms.save_metadata_library(cals, s) == 1
     text = open(cals, encoding='utf-8').read()
     assert 'calibrations:' in text and 'items:' not in text
 
     r = redvypr.Redvypr(hostname='multilib')
-    r.load_item_library(inv)
-    r.load_item_library(cals)
+    r.load_metadata_library(inv)
+    r.load_metadata_library(cals)
     assert [c.sn for c in ic.calibrations_from_metadata(r._copy_metadata())] == ['NTC-1']
     # new item and new calibration in the instance
     r.add_item(items.Item(itemtype='ntc_sensor', id='NTC-2', slot='ntc0'), valid_from=T1)
@@ -215,24 +215,24 @@ def test_several_libraries_with_calibrations(tmp_path):
     a2 = c2.create_redvypr_address().to_address_string()
     r.set_metadata_from_dict({a2: {'calibration': c2.model_dump(mode='json')}})
     r.add_item(items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X', batch='B'), valid_from=T1)
-    saved = r.save_item_libraries()
+    saved = r.save_metadata_libraries()
     assert saved == {inv: 2, cals: 2}
-    lib_inv = ms.load_item_library(inv)
-    lib_cal = ms.load_item_library(cals)
+    lib_inv = ms.load_metadata_library(inv)
+    lib_cal = ms.load_metadata_library(cals)
     assert sorted(lib_inv) == sorted([BO, items.item_address('ntc_sensor', 'NTC-2')])
     assert items.get_item(lib_inv, 'breakout_board_v01/BO-003', at_time=T2).batch == 'B'
     assert sorted(lib_cal) == sorted([a1, a2])
     assert sorted(c.sn for c in ic.calibrations_from_metadata(lib_cal)) == ['NTC-1', 'NTC-2']
     # save as: a new file gets only what belongs to no file
     other = str(tmp_path / 'other.yaml')
-    assert r.save_item_library(other) == 0
-    assert r.item_libraries == [inv, cals, other]
+    assert r.save_metadata_library(other) == 0
+    assert r.metadata_libraries == [inv, cals, other]
 
 
 def test_library_yaml_has_lf_line_ends(tmp_path):
     s = {}
     items.add_item(s, items.Item(itemtype='breakout_board_v01', id='BO-003', mpn='X'), valid_from=T0)
     path = str(tmp_path / 'lf.yaml')
-    ms.save_item_library(path, s)
+    ms.save_metadata_library(path, s)
     data = open(path, 'rb').read()
     assert b'\n' in data and b'\r' not in data

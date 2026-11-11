@@ -28,9 +28,9 @@ def setup(tmp_path):
     items.add_item(s, items.Item(itemtype='calypso_CMI1018', id='0011', manufacturer='Calypso Instruments',
                                  heading_offset={'value': 3.0, 'unit': 'deg'}, firmware='2.1'), valid_from=T0)
     items.add_item(s, norlog_items.NorlogV02(id='HW1', deviceid='HW1', sn='001'), valid_from=T0)
-    ms.save_item_library(inv, s)
+    ms.save_metadata_library(inv, s)
     r = redvypr.Redvypr(hostname='typeeditor')
-    r.load_item_library(inv)
+    r.load_metadata_library(inv)
     w = tw.RedvyprItemTypesWidget(redvypr_instance=r)
     yield r, w, tmp_path
     w.close()

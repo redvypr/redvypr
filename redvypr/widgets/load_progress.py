@@ -1,9 +1,9 @@
 """
 Progress dialog for slow actions with a callback ``progress(text, done, total)``, e.g. loading
-an item library (redvypr.metadata_sources.load_item_library(progress=...)).
+an item library (redvypr.metadata_sources.load_metadata_library(progress=...)).
 
     with LoadProgress(window, 'Loading hf_sensor') as progress:
-        redvypr.load_item_library(path, progress=progress)
+        redvypr.load_metadata_library(path, progress=progress)
 
 The dialog appears after ``delay`` seconds only (fast actions show nothing), shows the text and a
 bar (``total`` 0: busy, no bar), keeps the window responsive and has a Cancel button: the callback

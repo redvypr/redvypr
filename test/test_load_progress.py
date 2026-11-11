@@ -24,7 +24,7 @@ def directory_library(tmp_path):
     for i in range(12):
         items.add_item(s, items.Item(itemtype='gadget', id=f'G{i:02d}', name=f'gadget {i}'), valid_from=T0)
     d = str(tmp_path / 'lib')
-    ms.save_item_library(d, s)
+    ms.save_metadata_library(d, s)
     return d
 
 
@@ -36,7 +36,7 @@ def test_callback_per_file_and_totals(directory_library):
     # loading into redvypr: reading, then adding
     calls.clear()
     r = redvypr.Redvypr(hostname='progress1')
-    assert r.load_item_library(directory_library, progress=lambda *a: calls.append(a)) == 12
+    assert r.load_metadata_library(directory_library, progress=lambda *a: calls.append(a)) == 12
     assert calls[-1][0] == 'Adding to the metadata'
     assert r.get_item('gadget/G05') is not None
 
@@ -48,20 +48,20 @@ def test_cancel_changes_nothing(directory_library):
         if done >= 5:
             raise ms.LoadCancelled()
     with pytest.raises(ms.LoadCancelled):
-        r.load_item_library(directory_library, progress=cancel_at_five)
-    assert r.list_items() == [] and r.item_libraries == []
+        r.load_metadata_library(directory_library, progress=cancel_at_five)
+    assert r.list_items() == [] and r.metadata_libraries == []
     # reload: reads first, so a cancel keeps the old entries
-    r.load_item_library(directory_library)
+    r.load_metadata_library(directory_library)
     assert len(r.list_items()) == 12
     with pytest.raises(ms.LoadCancelled):
-        r.reload_item_library(directory_library, progress=cancel_at_five)
-    assert len(r.list_items()) == 12 and r.item_libraries == [directory_library]
+        r.reload_metadata_library(directory_library, progress=cancel_at_five)
+    assert len(r.list_items()) == 12 and r.metadata_libraries == [directory_library]
     # reload without cancel replaces the entries (an item deleted in the files is gone)
     s = ms.read_library_storage(directory_library)
     del s[items.item_address('gadget', 'G03')]
-    ms.save_item_library(directory_library, s)
+    ms.save_metadata_library(directory_library, s)
     seen = []
-    r.reload_item_library(directory_library, progress=lambda text, *_: seen.append(text))
+    r.reload_metadata_library(directory_library, progress=lambda text, *_: seen.append(text))
     assert r.get_item('gadget/G03') is None and len(r.list_items()) == 11
     assert 'Replacing the old entries' in seen
 

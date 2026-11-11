@@ -19,8 +19,8 @@ def test_field_cycle_with_bundles(tmp_path, make_with, read_with):
     """home -> bundle -> new field repository -> changes -> bundle -> home, without any network."""
     home, _field = two_computers(tmp_path)
     r_home = redvypr.Redvypr(hostname='bundle_home')
-    r_home.load_item_library(str(home / 'lib'))
-    r_home.load_item_library(str(home / 'inventory.yaml'))
+    r_home.load_metadata_library(str(home / 'lib'))
+    r_home.load_metadata_library(str(home / 'inventory.yaml'))
     out = r_home.item_git_export_bundle(str(home), str(tmp_path / 'to_field.bundle'), prefer=make_with)
     info = ig.read_bundle_info(out)
     assert info['server'].endswith('server.git') and info['commit'] == ig.backend_for(home).head()
@@ -39,7 +39,7 @@ def test_field_cycle_with_bundles(tmp_path, make_with, read_with):
     # meanwhile at home another change: the import merges
     change_item(home, 'H1', 'at home')
     ig.backend_for(home, prefer=make_with).commit([home / 'lib'], 'home: H1')
-    r_home.reload_item_library(str(home / 'lib'))
+    r_home.reload_metadata_library(str(home / 'lib'))
     res = r_home.item_git_import_bundle(str(home), back, prefer=make_with)
     assert res.action == 'merged' and res.behind == 1
     assert r_home.get_item('gadget/F5').name == 'made in the field'

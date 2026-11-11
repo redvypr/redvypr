@@ -929,7 +929,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         progress = LoadProgress(self, f'Loading {name}') if own else progress
         self.set_status(f'loading {name} ...')
         try:
-            n = self.redvypr.load_item_library(path, progress=progress)
+            n = self.redvypr.load_metadata_library(path, progress=progress)
             progress('Building the item tree', 0, 0)
             self.refresh()
             seconds = progress.elapsed
@@ -947,12 +947,12 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
 
     def save_library(self, path=None):
         if not path:
-            default = self.redvypr.item_libraries[0] if self.redvypr.item_libraries else 'items.yaml'
+            default = self.redvypr.metadata_libraries[0] if self.redvypr.metadata_libraries else 'items.yaml'
             path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save item library', default, LIBRARY_FILTER)
         if not path:
             return
         try:
-            n = self.redvypr.save_item_library(path)
+            n = self.redvypr.save_metadata_library(path)
         except Exception as e:
             self.set_status(f'{path} not saved: {e}', error=True)
             return
@@ -960,10 +960,10 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
 
     def save_libraries(self):
         """Saves every loaded library file; without one asks for a file name."""
-        if not self.redvypr.item_libraries:
+        if not self.redvypr.metadata_libraries:
             return self.save_library()
         try:
-            saved = self.redvypr.save_item_libraries()
+            saved = self.redvypr.save_metadata_libraries()
         except Exception as e:
             self.set_status(f'libraries not saved: {e}', error=True)
             return

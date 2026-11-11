@@ -122,7 +122,7 @@ def test_save_libraries_button(widget, tmp_path):
     w = widget
     path = str(tmp_path / 'inventory_norlog.yaml')
     w.save_library(path)
-    assert w.redvypr.item_libraries == [path]
+    assert w.redvypr.metadata_libraries == [path]
     w.save_libraries()
     assert 'inventory_norlog.yaml (3)' in w.status.text()
 
@@ -144,8 +144,8 @@ def test_delete_item(widget, tmp_path):
     assert 'norlog_v02/WRONG' not in [ref for _d, ref in tree_refs(w)]
     w.save_libraries()
     from redvypr import metadata_sources as ms
-    assert items.item_address('norlog_v02', 'WRONG') not in ms.load_item_library(path)
-    assert len(ms.load_item_library(path)) == 3
+    assert items.item_address('norlog_v02', 'WRONG') not in ms.load_metadata_library(path)
+    assert len(ms.load_metadata_library(path)) == 3
 
 
 def test_sn_column_and_move_dialog_labels(widget):

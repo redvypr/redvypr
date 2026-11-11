@@ -461,7 +461,7 @@ def write_definition(path: str, defn: TypeDefinition, valid_from=None) -> str:
     if _os.path.exists(path):
         storage = ms.read_library_storage(path)
     add_definition(storage, defn, valid_from=valid_from)
-    ms.save_item_library(path, storage)
+    ms.save_metadata_library(path, storage)
     _FILE_CACHE.pop(_os.path.abspath(path), None)
     _FILE_CACHE.pop(path, None)
     return path

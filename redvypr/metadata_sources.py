@@ -607,7 +607,7 @@ def type_search_paths(path) -> typing.List[str]:
     return out
 
 
-def load_item_library(path: str, type_paths=None, progress=None) -> dict:
+def load_metadata_library(path: str, type_paths=None, progress=None) -> dict:
     """
     Storage of an item library, entries tagged 'library:<name>'. Only library addresses
     (items, item types, calibrations) are taken. A YAML file (storage format {address:
@@ -624,11 +624,11 @@ def load_item_library(path: str, type_paths=None, progress=None) -> dict:
     return tag_storage(storage, f'library:{library_name(path)}', force=True)
 
 
-def save_item_library(path: str, storage: dict, addresses=None) -> int:
+def save_metadata_library(path: str, storage: dict, addresses=None) -> int:
     """
     Writes the library entries of a storage (items and calibrations) into a library
     file (storage format, without hostinfo and source), YAML or SQLite by the suffix
-    (see load_item_library(); in an SQLite file only these addresses are replaced).
+    (see load_metadata_library(); in an SQLite file only these addresses are replaced).
     addresses: only these (e.g. from assign_library_entries()), default all.
     Returns the number of addresses written.
     """

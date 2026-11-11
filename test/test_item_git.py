@@ -25,10 +25,10 @@ def make_repo(tmp_path):
     (root / 'README.md').write_text('readme\n')
     s = {}
     items.add_item(s, items.Item(itemtype='gadget', id='G1', name='one'), valid_from=T0)
-    ms.save_item_library(str(root / 'inventory.yaml'), s)
+    ms.save_metadata_library(str(root / 'inventory.yaml'), s)
     s2 = {}
     items.add_item(s2, items.Item(itemtype='gadget', id='G2'), valid_from=T0)
-    ms.save_item_library(str(root / 'lib'), s2)
+    ms.save_metadata_library(str(root / 'lib'), s2)
     porcelain.add(str(root), paths=[str(root / 'README.md'), str(root / 'inventory.yaml'),
                                     str(root / 'lib' / 'redvypr_library.yaml'),
                                     str(root / 'lib' / 'items' / 'gadget' / 'G2.yaml')])
@@ -46,11 +46,11 @@ def test_status_and_commit_of_library_files(tmp_path, backend):
     # changes: a modified file, a new file in the directory library, a deleted one, an unrelated file
     s = ms.read_library_storage(str(root / 'inventory.yaml'))
     items.add_item(s, items.Item(itemtype='gadget', id='G1', name='renamed'), valid_from='2026-11-05T00:00:00+00:00')
-    ms.save_item_library(str(root / 'inventory.yaml'), s)
+    ms.save_metadata_library(str(root / 'inventory.yaml'), s)
     s2 = ms.read_library_storage(str(root / 'lib'))
     items.add_item(s2, items.Item(itemtype='gadget', id='G3'), valid_from=T0)
     del s2[items.item_address('gadget', 'G2')]
-    ms.save_item_library(str(root / 'lib'), s2)
+    ms.save_metadata_library(str(root / 'lib'), s2)
     (root / 'notes.txt').write_text('not a library\n')
     paths = [root / 'inventory.yaml', root / 'lib']
     got = {(c.path, c.state) for c in b.status(paths)}
@@ -93,8 +93,8 @@ def test_redvypr_commits_the_item_files(tmp_path, backend):
     import redvypr
     root = make_repo(tmp_path)
     r = redvypr.Redvypr(hostname='gitcommit')
-    r.load_item_library(str(root / 'inventory.yaml'))
-    r.load_item_library(str(root / 'lib'))
+    r.load_metadata_library(str(root / 'inventory.yaml'))
+    r.load_metadata_library(str(root / 'lib'))
     assert all(st == [] for _b, st in r.item_git_status(prefer=backend).values())
     r.add_item(items.Item(itemtype='gadget', id='G9', name='new in the field'), valid_from=T0)
     (root / 'notes.txt').write_text('unrelated\n')
@@ -131,7 +131,7 @@ def two_computers(tmp_path):
 def change_item(repo_root, item_id, name, when='2026-11-05T00:00:00+00:00'):
     s = ms.read_library_storage(str(repo_root / 'lib'))
     items.add_item(s, items.Item(itemtype='gadget', id=item_id, name=name), valid_from=when)
-    ms.save_item_library(str(repo_root / 'lib'), s)
+    ms.save_metadata_library(str(repo_root / 'lib'), s)
 
 
 @pytest.mark.parametrize('backend', BACKENDS)
@@ -203,9 +203,9 @@ def test_redvypr_pull_reloads_and_push(tmp_path, backend):
     import redvypr
     home, field = two_computers(tmp_path)
     r_field = redvypr.Redvypr(hostname='field')
-    r_field.load_item_library(str(field / 'lib'))
+    r_field.load_metadata_library(str(field / 'lib'))
     r_home = redvypr.Redvypr(hostname='home')
-    r_home.load_item_library(str(home / 'lib'))
+    r_home.load_metadata_library(str(home / 'lib'))
     # in the field: rename G2, delete nothing; commit and push from redvypr
     r_field.add_item(items.Item(itemtype='gadget', id='G2', name='renamed in the field'),
                      valid_from='2026-11-06T00:00:00+00:00')
@@ -220,7 +220,7 @@ def test_redvypr_pull_reloads_and_push(tmp_path, backend):
     # an item deleted elsewhere disappears after the pull (reload removes the old entries)
     s = ms.read_library_storage(str(field / 'lib'))
     del s[items.item_address('gadget', 'G2')]
-    ms.save_item_library(str(field / 'lib'), s)
+    ms.save_metadata_library(str(field / 'lib'), s)
     ig.backend_for(field, prefer=backend).commit([field / 'lib'], 'G2 removed')
     ig.backend_for(field, prefer=backend).push()
     r_home.item_git_pull(prefer=backend)
@@ -228,7 +228,7 @@ def test_redvypr_pull_reloads_and_push(tmp_path, backend):
     # a new item (new file) does not stop a pull; a changed existing item not committed does
     r_home.add_item(items.Item(itemtype='gadget', id='H9'), valid_from=T0)
     assert not isinstance(list(r_home.item_git_pull(prefer=backend).values())[0], ig.GitError)
-    r_home.load_item_library(str(home / 'inventory.yaml'))
+    r_home.load_metadata_library(str(home / 'inventory.yaml'))
     r_home.add_item(items.Item(itemtype='gadget', id='G1', name='changed, not committed'),
                     valid_from='2026-11-07T00:00:00+00:00')
     res = r_home.item_git_pull(prefer=backend)
@@ -242,12 +242,12 @@ def test_merge_of_one_file_changed_at_two_places(tmp_path, backend):
     bh, bf = ig.backend_for(home, prefer=backend), ig.backend_for(field, prefer=backend)
     s = ms.read_library_storage(str(home / 'inventory.yaml'))
     items.add_item(s, items.Item(itemtype='gadget', id='G1', name='home'), valid_from='2026-11-05T00:00:00+00:00')
-    ms.save_item_library(str(home / 'inventory.yaml'), s)
+    ms.save_metadata_library(str(home / 'inventory.yaml'), s)
     bh.commit([home / 'inventory.yaml'], 'home: G1')
     bh.push()
     s = ms.read_library_storage(str(field / 'inventory.yaml'))
     items.add_item(s, items.Item(itemtype='gadget', id='Z9', name='field'), valid_from=T0)
-    ms.save_item_library(str(field / 'inventory.yaml'), s)
+    ms.save_metadata_library(str(field / 'inventory.yaml'), s)
     bf.commit([field / 'inventory.yaml'], 'field: Z9')
     res = bf.pull()
     assert res.action == 'merged'

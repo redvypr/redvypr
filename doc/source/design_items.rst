@@ -489,7 +489,7 @@ all tabs (libraries: load file/folder, save as, list; "Save libraries";
   the tab Items.
 
 **Configuration and libraries.** A saved configuration stores the location of
-the item libraries (``item_libraries``), not their contents: ``save_config()``
+the item libraries (``metadata_libraries``), not their contents: ``save_config()``
 leaves out the entries that come only from the loaded libraries
 (``metadata_sources.strip_library_entries()``), keeps the generic metadata
 and the changes not saved into a library yet, and applying the configuration
@@ -503,7 +503,7 @@ takes longer than 0.3 s: the file being read with its count ("Reading library
 (470 / 2612)"), then "Adding to the metadata", "Building the item tree/the
 tabs"; Cancel stops it, and nothing is changed because a library is read
 completely before the metadata change (``progress(text, done, total)`` of
-``load_item_library()``, ``reload_item_library()``, ``item_git_pull()``,
+``load_metadata_library()``, ``reload_metadata_library()``, ``item_git_pull()``,
 ``item_git_import_bundle()``, ``item_git_clone_bundle()``; a callback may
 raise ``LoadCancelled``). The status line then says how long it took.
 
@@ -614,7 +614,7 @@ Storage and exchange
   fast-forwards or merges; a conflict stops it with the files named and the
   repository as before (dulwich merges changes of both sides at different
   places of the same file with the package ``merge3``, a dependency); after a pull the libraries of the repository are loaded again
-  (``reload_item_library()``: entries deleted in the files disappear). A push
+  (``reload_metadata_library()``: entries deleted in the files disappear). A push
   is refused if the remote has new commits. Credentials with dulwich: HTTPS
   with user name and personal access token, kept in the system key store
   (``keyring``, service ``redvypr-git:<host>``), asked for by a callback if
@@ -751,7 +751,7 @@ Steps
    address, writing/reading items (one key per field), ``parent``/``slot``,
    ``get_items()`` with the tree and the exception ``items``; tests.
 2. **Done** (``redvypr/metadata_sources.py``, ``test/test_metadata_sources.py``;
-   item libraries in the configuration ``item_libraries``, loaded into the
+   item libraries in the configuration ``metadata_libraries``, loaded into the
    instance; ``DbReader`` merges its database with the instance): Metadata view over several sources with ``source``, precedence and
    conflicts; ``DbReader`` reads through it.
 3. **Done** (``redvypr/widgets/redvypr_items_widget.py``, button "Items" in the

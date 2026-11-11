@@ -103,8 +103,11 @@ class RedvyprConfig(pydantic.BaseModel):
     gui_home_icon: str = 'redvypr'
     datasources: typing.List[DataSourceConfig] = pydantic.Field(default=[], description='Databases to read '
                                                                 'data from (e.g. by the XY plot), used by their name')
-    item_libraries: typing.List[str] = pydantic.Field(default=[], description='Item library files (YAML), '
-                                                      'loaded into the metadata at the start (redvypr.items)')
+    # the former name item_libraries is still read
+    metadata_libraries: typing.List[str] = pydantic.Field(
+        default=[], validation_alias=pydantic.AliasChoices('metadata_libraries', 'item_libraries'),
+        description='Metadata libraries (YAML files, SQLite files or directories with items, item types and '
+                    'calibrations), loaded into the metadata when the configuration is applied')
     item_attachments_path: typing.Optional[str] = pydantic.Field(
         default=None, description='Folder of the attachments of items (photos, reports); default: the folder '
                                   '"attachments" next to the first item library')
@@ -527,7 +530,7 @@ class Redvypr(QtCore.QObject):
         self.datasource_registry = DatasourceRegistry(config.datasources or [],
                                                       on_change=self.datasources_changed_signal.emit,
                                                       metadata_sources=self._reader_metadata_sources)
-        self.item_libraries = []        # item library files (redvypr.metadata_sources)
+        self.metadata_libraries = []        # item library files (redvypr.metadata_sources)
         self.item_type_paths = list(getattr(config, 'item_type_paths', None) or [])  # see redvypr.item_types
         self.item_attachments_path = getattr(config, 'item_attachments_path', None)  # see redvypr.item_attachments
         self.properties = {}  # Properties that are distributed with the device
@@ -552,7 +555,7 @@ class Redvypr(QtCore.QObject):
             # libraries are loaded from their files below
             metadata_init = {'_metadata': redvypr_metadata_sources.strip_library_entries(
                 redvypr.metadata.normalize_metadata(config.metadata, hostinfo=self.hostinfo),
-                config.item_libraries)}
+                config.metadata_libraries)}
             status_statistics = redvypr.metadata.do_metadata(
                 metadata_init, self.deviceinfo_all)
             #print("Hallo",self.deviceinfo_all)
@@ -560,12 +563,12 @@ class Redvypr(QtCore.QObject):
                 f'Added {len(config.metadata.keys())} entries from config to metadata {len(self.deviceinfo_all['metadata'].keys())} local entries.')
             #print("Metadata done")
         # Item library files: into the metadata, entries tagged 'library:<file>'
-        for path in config.item_libraries or []:
+        for path in config.metadata_libraries or []:
             try:
-                storage = redvypr_metadata_sources.load_item_library(path, type_paths=self.item_type_paths)
+                storage = redvypr_metadata_sources.load_metadata_library(path, type_paths=self.item_type_paths)
                 redvypr.metadata.do_metadata({'_metadata': storage}, self.deviceinfo_all,
                                              auto_add_packetfilter=False)
-                self.item_libraries.append(path)
+                self.metadata_libraries.append(path)
             except Exception:
                 logger.warning(f'could not load the item library {path}', exc_info=True)
 
@@ -621,13 +624,13 @@ class Redvypr(QtCore.QObject):
             logger.debug(f"Applying metadata:{redvypr_config.metadata=}")
             self.set_metadata_from_dict(redvypr_metadata_sources.strip_library_entries(
                 redvypr.metadata.normalize_metadata(redvypr_config.metadata, hostinfo=self.hostinfo),
-                getattr(redvypr_config, 'item_libraries', None)))
+                getattr(redvypr_config, 'metadata_libraries', None)))
             logger.debug(funcname + 'Adding metadata done')
         for datasource in redvypr_config.datasources or []:
             self.add_datasource(datasource)
-        for path in getattr(redvypr_config, 'item_libraries', None) or []:
+        for path in getattr(redvypr_config, 'metadata_libraries', None) or []:
             try:
-                self.load_item_library(path)
+                self.load_metadata_library(path)
             except Exception:
                 logger.warning(f'could not load the item library {path}', exc_info=True)
 
@@ -678,7 +681,7 @@ class Redvypr(QtCore.QObject):
                                devicepaths=self.device_paths, loglevel=loglevel_tmp,
                                redvyp_version=version, date_created=str(datetime.datetime.utcnow()),
                                devices=devices, datasources=[d.model_copy() for d in self.datasources],
-                               item_libraries=list(self.item_libraries),
+                               metadata_libraries=list(self.metadata_libraries),
                                item_type_paths=list(self.item_type_paths),
                                item_attachments_path=self.item_attachments_path)
 
@@ -710,9 +713,9 @@ class Redvypr(QtCore.QObject):
             # The stored entries with their history and constraints (get_metadata()
             # would give only the current values); loaded again by normalize_metadata()
             # without the entries of the loaded item libraries: the configuration stores their
-            # location (item_libraries) and they are loaded from there when it is applied
+            # location (metadata_libraries) and they are loaded from there when it is applied
             data_save['metadata'] = redvypr_metadata_sources.strip_library_entries(
-                self._copy_metadata(), self.item_libraries)
+                self._copy_metadata(), self.metadata_libraries)
 
         if fname:
             logger.debug('Saving to file {:s}'.format(fname))
@@ -1564,7 +1567,7 @@ class Redvypr(QtCore.QObject):
         """All stored entries of an item."""
         return redvypr_items.get_item_history(self._copy_metadata(), ref)
 
-    def load_item_library(self, path: str, progress=None) -> int:
+    def load_metadata_library(self, path: str, progress=None) -> int:
         """
         Loads an item library (YAML file, SQLite file or directory) into the metadata; its
         entries carry the source 'library:<name>'. Loading the same library again adds nothing.
@@ -1572,7 +1575,7 @@ class Redvypr(QtCore.QObject):
         it may raise LoadCancelled: everything is read before the metadata change, so nothing is
         changed then. Returns the number of addresses in the library.
         """
-        storage = redvypr_metadata_sources.load_item_library(path, type_paths=self.item_type_paths,
+        storage = redvypr_metadata_sources.load_metadata_library(path, type_paths=self.item_type_paths,
                                                              progress=progress)
         return self._add_library_storage(path, storage, progress)
 
@@ -1583,11 +1586,11 @@ class Redvypr(QtCore.QObject):
         datapacket['_metadata'] = storage
         self.redvyprqueue.put(datapacket)
         self.redvyprreplyqueue.get()
-        if path not in self.item_libraries:
-            self.item_libraries.append(path)
+        if path not in self.metadata_libraries:
+            self.metadata_libraries.append(path)
         return len(storage)
 
-    def save_item_library(self, path: str | None = None) -> int:
+    def save_metadata_library(self, path: str | None = None) -> int:
         """
         Writes the items and calibrations belonging to a library file (default: the
         first loaded one): those loaded from it and the new ones assigned to it
@@ -1596,17 +1599,17 @@ class Redvypr(QtCore.QObject):
         Returns the number of addresses written.
         """
         if path is None:
-            if not self.item_libraries:
+            if not self.metadata_libraries:
                 raise ValueError('no item library loaded, give a file name')
-            path = self.item_libraries[0]
+            path = self.metadata_libraries[0]
         storage = self._copy_metadata()
-        libraries = list(self.item_libraries)
+        libraries = list(self.metadata_libraries)
         if path not in libraries:
             libraries.insert(0, path)      # save as: the new entries go here
         assigned = redvypr_metadata_sources.assign_library_entries(storage, libraries)
-        n = redvypr_metadata_sources.save_item_library(path, storage, addresses=set(assigned.get(path, [])))
-        if path not in self.item_libraries:
-            self.item_libraries.append(path)
+        n = redvypr_metadata_sources.save_metadata_library(path, storage, addresses=set(assigned.get(path, [])))
+        if path not in self.metadata_libraries:
+            self.metadata_libraries.append(path)
         return n
 
     def item_type_search_paths(self) -> list:
@@ -1615,7 +1618,7 @@ class Redvypr(QtCore.QObject):
         subdirectories), then next to the libraries (metadata_sources.type_search_paths()).
         """
         paths = list(self.item_type_paths)
-        for lib in self.item_libraries:
+        for lib in self.metadata_libraries:
             for p in redvypr_metadata_sources.type_search_paths(lib):
                 if p not in paths:
                     paths.append(p)
@@ -1643,7 +1646,7 @@ class Redvypr(QtCore.QObject):
         for f in ritem_types.type_files(self.item_type_search_paths()):
             if ritem_types.definitions_in_file(f):
                 files.add(f)
-        for lib in self.item_libraries:
+        for lib in self.metadata_libraries:
             if not redvypr_metadata_sources.is_sqlite_library(lib) and os.path.isfile(lib):
                 if ritem_types.definitions_in_file(os.path.abspath(lib)):
                     files.add(lib)
@@ -1663,9 +1666,9 @@ class Redvypr(QtCore.QObject):
         ritem_types.build_model(defn, base)
         ritem_types.write_definition(path, defn, valid_from=valid_from)
         ritem_types.register_definitions({defn.name: defn}, sources={defn.name: os.path.abspath(path)})
-        loaded = [lib for lib in self.item_libraries if os.path.abspath(lib) == os.path.abspath(path)]
+        loaded = [lib for lib in self.metadata_libraries if os.path.abspath(lib) == os.path.abspath(path)]
         if loaded:
-            self.load_item_library(loaded[0])
+            self.load_metadata_library(loaded[0])
         return path
 
     def item_attachments_folder(self) -> str:
@@ -1673,7 +1676,7 @@ class Redvypr(QtCore.QObject):
         if self.item_attachments_path:
             return os.path.abspath(self.item_attachments_path)
         import redvypr.item_attachments as ritem_attachments
-        folder = os.path.dirname(os.path.abspath(self.item_libraries[0])) if self.item_libraries else os.getcwd()
+        folder = os.path.dirname(os.path.abspath(self.metadata_libraries[0])) if self.metadata_libraries else os.getcwd()
         return os.path.join(folder, ritem_attachments.DEFAULT_FOLDER)
 
     def item_git_paths(self) -> list:
@@ -1683,7 +1686,7 @@ class Redvypr(QtCore.QObject):
         of new entries (e.g. calibrations.yaml). See redvypr.item_git.
         """
         import redvypr.item_types as ritem_types
-        paths = [os.path.abspath(p) for p in self.item_libraries]
+        paths = [os.path.abspath(p) for p in self.metadata_libraries]
         paths.append(self.item_attachments_folder())
         for name, src in ritem_types.TYPE_SOURCES.items():
             if src and name in ritem_types.DATA_TYPES:
@@ -1712,13 +1715,13 @@ class Redvypr(QtCore.QObject):
         repository they are in. Returns {repository root: commit id or None (nothing to commit)}.
         """
         import redvypr.item_git as ritem_git
-        self.save_item_libraries()
+        self.save_metadata_libraries()
         out = {}
         for root, (backend, paths) in ritem_git.group_by_repo(self.item_git_paths(), prefer=prefer).items():
             out[root] = backend.commit(paths, message)
         return out
 
-    def reload_item_library(self, path: str, progress=None) -> int:
+    def reload_metadata_library(self, path: str, progress=None) -> int:
         """
         Loads a library again after its files changed (e.g. a git pull): the library is read
         first (progress, LoadCancelled: nothing changed), then the entries loaded from it are
@@ -1726,7 +1729,7 @@ class Redvypr(QtCore.QObject):
         gone as well. Entries of this instance not saved yet are lost: save the libraries first.
         Returns the number of addresses loaded.
         """
-        storage = redvypr_metadata_sources.load_item_library(path, type_paths=self.item_type_paths,
+        storage = redvypr_metadata_sources.load_metadata_library(path, type_paths=self.item_type_paths,
                                                              progress=progress)
         if progress is not None:
             progress('Replacing the old entries', 0, 0)
@@ -1749,7 +1752,7 @@ class Redvypr(QtCore.QObject):
         again if it changed. Returns {repository root: SyncResult or the GitError}.
         """
         import redvypr.item_git as ritem_git
-        self.save_item_libraries()
+        self.save_metadata_libraries()
         out = {}
         for root, (backend, _paths) in ritem_git.group_by_repo(self.item_git_paths(), prefer=prefer).items():
             try:
@@ -1759,9 +1762,9 @@ class Redvypr(QtCore.QObject):
                 continue
             out[root] = res
             if res.changed:
-                for lib in list(self.item_libraries):
+                for lib in list(self.metadata_libraries):
                     if ritem_git.find_repo(lib) == root:
-                        self.reload_item_library(lib, progress=progress)
+                        self.reload_metadata_library(lib, progress=progress)
         return out
 
     def item_git_push(self, ask_credentials=None, prefer=None) -> dict:
@@ -1781,11 +1784,11 @@ class Redvypr(QtCore.QObject):
         into a bundle file for a computer without network (redvypr.item_git). Returns the path.
         """
         import redvypr.item_git as ritem_git
-        self.save_item_libraries()
+        self.save_metadata_libraries()
         backend = ritem_git.backend_for(root, prefer=prefer)
         if backend is None:
             raise ritem_git.GitError(f'{root} is not a git repository')
-        libs = [lib for lib in self.item_libraries if ritem_git.find_repo(lib) == backend.root]
+        libs = [lib for lib in self.metadata_libraries if ritem_git.find_repo(lib) == backend.root]
         return backend.create_bundle(path, libraries=libs)
 
     def item_git_import_bundle(self, root: str, path: str, prefer=None, progress=None):
@@ -1794,15 +1797,15 @@ class Redvypr(QtCore.QObject):
         files) and loads its libraries again if it changed. Returns the SyncResult.
         """
         import redvypr.item_git as ritem_git
-        self.save_item_libraries()
+        self.save_metadata_libraries()
         backend = ritem_git.backend_for(root, prefer=prefer)
         if backend is None:
             raise ritem_git.GitError(f'{root} is not a git repository')
         res = backend.import_bundle(path)
         if res.changed:
-            for lib in list(self.item_libraries):
+            for lib in list(self.metadata_libraries):
                 if ritem_git.find_repo(lib) == backend.root:
-                    self.reload_item_library(lib, progress=progress)
+                    self.reload_metadata_library(lib, progress=progress)
         return res
 
     def item_git_clone_bundle(self, path: str, target: str, remote_url=None, prefer=None, progress=None) -> list:
@@ -1821,7 +1824,7 @@ class Redvypr(QtCore.QObject):
             if os.path.normcase(p) not in [os.path.normcase(x) for x in libs]:
                 libs.append(p)
         for lib in libs:
-            self.load_item_library(lib, progress=progress)
+            self.load_metadata_library(lib, progress=progress)
         return libs
 
     def library_default_files(self) -> dict:
@@ -1829,7 +1832,7 @@ class Redvypr(QtCore.QObject):
         {kind: path} of the files for new entries of a kind no library holds yet, next to the
         first YAML library (redvypr.metadata_sources.DEFAULT_LIBRARY_FILES, e.g. calibrations.yaml).
         """
-        yaml_libs = [p for p in self.item_libraries if not redvypr_metadata_sources.is_sqlite_library(p)
+        yaml_libs = [p for p in self.metadata_libraries if not redvypr_metadata_sources.is_sqlite_library(p)
                      and not redvypr_metadata_sources.is_directory_library(p)]
         if not yaml_libs:
             return {}
@@ -1837,27 +1840,27 @@ class Redvypr(QtCore.QObject):
         return {kind: os.path.join(folder, name)
                 for kind, name in redvypr_metadata_sources.DEFAULT_LIBRARY_FILES.items()}
 
-    def save_item_libraries(self) -> dict:
+    def save_metadata_libraries(self) -> dict:
         """
-        Saves every loaded library file (save_item_library()); new entries of a kind no library
+        Saves every loaded library file (save_metadata_library()); new entries of a kind no library
         holds yet go into its default file (library_default_files(), e.g. calibrations.yaml next
         to the first library; an existing file is loaded first, so its contents stay).
         Returns {path: number of addresses}.
         """
         defaults = self.library_default_files()
         storage = self._copy_metadata()
-        assigned = redvypr_metadata_sources.assign_library_entries(storage, self.item_libraries, defaults)
+        assigned = redvypr_metadata_sources.assign_library_entries(storage, self.metadata_libraries, defaults)
         for path, addrs in assigned.items():
-            if addrs and path not in self.item_libraries:
+            if addrs and path not in self.metadata_libraries:
                 if os.path.exists(path):
-                    self.load_item_library(path)
+                    self.load_metadata_library(path)
                 else:
-                    self.item_libraries.append(path)
+                    self.metadata_libraries.append(path)
         storage = self._copy_metadata()
-        assigned = redvypr_metadata_sources.assign_library_entries(storage, self.item_libraries, defaults)
+        assigned = redvypr_metadata_sources.assign_library_entries(storage, self.metadata_libraries, defaults)
         saved = {}
-        for path in list(self.item_libraries):
-            saved[path] = redvypr_metadata_sources.save_item_library(path, storage,
+        for path in list(self.metadata_libraries):
+            saved[path] = redvypr_metadata_sources.save_metadata_library(path, storage,
                                                                      addresses=set(assigned.get(path, [])))
         return saved
 

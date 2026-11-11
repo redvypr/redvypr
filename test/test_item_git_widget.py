@@ -24,13 +24,13 @@ def app():
 def test_git_window_commit_push_pull(app, tmp_path, backend):
     home, field = two_computers(tmp_path)
     r_field = redvypr.Redvypr(hostname='gitwin_field')
-    r_field.load_item_library(str(field / 'lib'))
+    r_field.load_metadata_library(str(field / 'lib'))
     r_home = redvypr.Redvypr(hostname='gitwin_home')
-    r_home.load_item_library(str(home / 'lib'))
+    r_home.load_metadata_library(str(home / 'lib'))
     wf = gw.RedvyprItemGitWidget(r_field, prefer=backend)
     assert wf.repos.rowCount() == 1 and wf.repos.item(0, 3).text() == '0'
     r_field.add_item(items.Item(itemtype='gadget', id='F7', name='field'), valid_from='2026-11-02T00:00:00+00:00')
-    r_field.save_item_libraries()
+    r_field.save_metadata_libraries()
     wf.refresh()
     assert wf.repos.item(0, 3).text() == '1' and wf.files.item(0, 1).text() == 'lib/items/gadget/F7.yaml'
     assert wf.commit('') is None and 'message' in wf.status.text()
@@ -70,10 +70,10 @@ def test_git_window_without_repository(app, tmp_path):
     lib = tmp_path / 'plain' / 'inventory.yaml'
     lib.parent.mkdir()
     from redvypr import metadata_sources as ms
-    ms.save_item_library(str(lib), {})
+    ms.save_metadata_library(str(lib), {})
     if ig.find_repo(lib) is not None:
         pytest.skip('temporary folder inside a git repository')
-    r.load_item_library(str(lib))
+    r.load_metadata_library(str(lib))
     w = gw.RedvyprItemGitWidget(r)
     assert w.repos.rowCount() == 0 and 'not in a git repository' in w.status.text()
     w.close()
@@ -116,8 +116,8 @@ def test_credentials_asked_once_and_stored(monkeypatch, tmp_path):
 def test_git_window_bundles(app, tmp_path, backend):
     home, _field = two_computers(tmp_path)
     r_home = redvypr.Redvypr(hostname='gitwin_bh')
-    r_home.load_item_library(str(home / 'lib'))              # loaded first: new items go here
-    r_home.load_item_library(str(home / 'inventory.yaml'))
+    r_home.load_metadata_library(str(home / 'lib'))              # loaded first: new items go here
+    r_home.load_metadata_library(str(home / 'inventory.yaml'))
     wh = gw.RedvyprItemGitWidget(r_home, prefer=backend)
     out = wh.export_bundle(str(tmp_path / 'b1.bundle'))
     assert out and 'bundle written' in wh.status.text()

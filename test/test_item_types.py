@@ -37,7 +37,7 @@ def test_short_form_library_and_model(tmp_path):
     path = str(tmp_path / 'item_types.yaml')
     with open(path, 'w', encoding='utf-8') as f:
         yaml.safe_dump({'item_types': {'calypso_CMI1018': CALYPSO}}, f)
-    lib = ms.load_item_library(path)
+    lib = ms.load_metadata_library(path)
     assert list(lib) == [it.itemtype_address('calypso_CMI1018')]
     cls = items.get_item_type('calypso_CMI1018')
     assert cls.ORIGIN == 'data' and it.type_origin('calypso_CMI1018') == 'data'
@@ -52,11 +52,11 @@ def test_short_form_library_and_model(tmp_path):
         cls(id='x', interface='BLE')
     # saved again: storage format in the section item_types, loaded the same
     out = str(tmp_path / 'again.yaml')
-    ms.save_item_library(out, lib)
+    ms.save_metadata_library(out, lib)
     text = open(out, encoding='utf-8').read()
     assert 'item_types:' in text and 'items:' not in text
     items.ITEM_TYPES.pop('calypso_CMI1018')
-    ms.load_item_library(out)
+    ms.load_metadata_library(out)
     assert items.get_item_type('calypso_CMI1018').ORIGIN == 'data'
 
 
@@ -127,8 +127,8 @@ def test_lookup_of_unknown_types_in_the_library_directory(tmp_path):
     s0 = {}
     items.add_item(s0, items.Item(itemtype='calypso_CMI1018', id='X'), valid_from=T0)
     only_sub = str(tmp_path / 'only_sub.yaml')
-    ms.save_item_library(only_sub, s0)
-    ms.load_item_library(only_sub)
+    ms.save_metadata_library(only_sub, s0)
+    ms.load_metadata_library(only_sub)
     assert 'calypso_CMI1018' not in items.ITEM_TYPES        # subdirectory not searched
     os.replace(sub / 'CMI1018.yaml', tmp_path / 'item_types.yaml')
     sub = tmp_path
@@ -137,9 +137,9 @@ def test_lookup_of_unknown_types_in_the_library_directory(tmp_path):
     items.add_item(s, items.Item(itemtype='calypso_CMI1018', id='0011', heading_offset=4.0), valid_from=T0)
     items.add_item(s, items.Item(itemtype='gadget_without_definition', id='G1'), valid_from=T0)
     inv = str(tmp_path / 'inventory.yaml')
-    ms.save_item_library(inv, s)
+    ms.save_metadata_library(inv, s)
     assert 'calypso_CMI1018' not in items.ITEM_TYPES
-    lib = ms.load_item_library(inv)
+    lib = ms.load_metadata_library(inv)
     assert items.get_item_type('calypso_CMI1018').ORIGIN == 'data'
     assert 'unused_type' not in items.ITEM_TYPES              # only what is needed
     assert 'gadget_without_definition' not in items.ITEM_TYPES
@@ -154,7 +154,7 @@ def test_lookup_of_unknown_types_in_the_library_directory(tmp_path):
     os.replace(sub / 'item_types.yaml', other / 'CMI1018.yaml')
     r = redvypr.Redvypr(hostname='typelookup')
     r.item_type_paths = [str(other)]
-    r.load_item_library(inv)
+    r.load_metadata_library(inv)
     assert items.get_item_type('calypso_CMI1018').ORIGIN == 'data'
     assert r.get_config().item_type_paths == [str(other)]
     # changed definition: read again on the next resolution

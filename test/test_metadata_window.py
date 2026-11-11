@@ -36,9 +36,9 @@ def window(tmp_path):
         (addr, value), = ic.calibration_metadict(cal).items()
         md.add_metadata_to_entries(md.create_metadata_dict(addr, value, valid_from=T0), s)
     lib = str(tmp_path / 'inventory.yaml')
-    ms.save_item_library(lib, s)
+    ms.save_metadata_library(lib, s)
     r = redvypr.Redvypr(hostname='mdwin')
-    r.load_item_library(lib)
+    r.load_metadata_library(lib)
     r.set_metadata_from_dict({"temp @ d:'ctd_01'": {'unit': 'degC'}})
     w = mw.RedvyprMetadataWindow(redvypr_instance=r)
     yield r, w

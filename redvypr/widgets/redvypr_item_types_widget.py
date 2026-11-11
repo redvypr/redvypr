@@ -297,7 +297,7 @@ class RedvyprItemTypesWidget(QtWidgets.QWidget):
             self.file.setCurrentText(current_file)
 
     def _default_file(self) -> str:
-        libs = list(getattr(self.redvypr, 'item_libraries', []) or [])
+        libs = list(getattr(self.redvypr, 'metadata_libraries', []) or [])
         folder = os.path.dirname(os.path.abspath(libs[0])) if libs else os.getcwd()
         return os.path.join(folder, DEFAULT_TYPE_FILE)
 

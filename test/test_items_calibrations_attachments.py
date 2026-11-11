@@ -39,9 +39,9 @@ def window(tmp_path):
     s = {}
     items.add_item(s, items.Item(itemtype='ntc_sensor', id='0042'), valid_from=T0)
     items.add_item(s, sd.HfSensor(sn='0042', name='hf'), valid_from=T0)
-    ms.save_item_library(inv, s)
+    ms.save_metadata_library(inv, s)
     r = redvypr.Redvypr(hostname='calatt')
-    r.load_item_library(inv)
+    r.load_metadata_library(inv)
     w = iw.RedvyprItemsWidget(redvypr_instance=r)
     yield r, w, tmp_path, inv
     w.close()
@@ -71,10 +71,10 @@ def test_import_calibrations_by_serial_number_and_type(window):
     select(w, 'hf_sensor/0042')
     assert w.calibrations.rowCount() == 0
     # saved: new calibrations go into calibrations.yaml next to the inventory
-    saved = r.save_item_libraries()
+    saved = r.save_metadata_libraries()
     cal_file = os.path.join(os.path.dirname(inv), 'calibrations.yaml')
     assert saved[cal_file] == 3 and 'calibrations:' not in open(inv, encoding='utf-8').read()
-    lib = ms.load_item_library(cal_file)
+    lib = ms.load_metadata_library(cal_file)
     assert sorted(c.sn for c in ic.calibrations_from_metadata(lib)) == ['0042', '0042', '0099']
     # remove one
     select(w, 'ntc_sensor/0042')
@@ -110,8 +110,8 @@ def test_attachments(window):
     assert len(ia.attachments_of(r.get_item('hf_sensor/0042'))) == 1
     assert r.get_item('hf_sensor/0042').name == 'hf renamed'
     # saved into the library and back
-    r.save_item_libraries()
-    lib = ms.load_item_library(inv)
+    r.save_metadata_libraries()
+    lib = ms.load_metadata_library(inv)
     assert ia.attachments_of(items.get_item(lib, 'hf_sensor/0042'))[0].sha256 == att.sha256
     # remove: entry and file
     assert w.remove_attachment(att.attachment_uuid, confirm=lambda t: True)

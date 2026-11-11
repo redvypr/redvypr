@@ -7,6 +7,11 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- The libraries are metadata libraries (they hold items, item types and calibrations): the
+  configuration key is `metadata_libraries` (the former `item_libraries` is still read),
+  `Redvypr.metadata_libraries`, `load_metadata_library()`, `save_metadata_library()`,
+  `save_metadata_libraries()`, `reload_metadata_library()`, `metadata_sources.load_metadata_library()`
+  and `save_metadata_library()` (former names `..._item_librar...`).
 - A saved configuration stores the location of the item libraries, not their contents:
   `save_config()` leaves out the entries that come only from the loaded libraries
   (`metadata_sources.strip_library_entries()`), the libraries are loaded from their files when the
@@ -16,7 +21,7 @@ redvypr changelog
 - Progress while loading item libraries: a dialog with the file being read and its count, the
   following steps and a Cancel button appears if loading takes longer than 0.3 s (Metadata
   window, Items window, Git window for pull, bundle import and new repository); cancelling changes
-  nothing. `progress(text, done, total)` of `Redvypr.load_item_library()`, `reload_item_library()`
+  nothing. `progress(text, done, total)` of `Redvypr.load_metadata_library()`, `reload_metadata_library()`
   (reads first, then replaces the old entries), `item_git_pull()`, `item_git_import_bundle()`,
   `item_git_clone_bundle()`; `metadata_sources.LoadCancelled`; `widgets.load_progress.LoadProgress`.
   The status line shows the loading time.
@@ -53,7 +58,7 @@ redvypr changelog
   (`Redvypr.item_git_paths()`, `item_git_status()`, `item_git_commit()`, `item_git_pull()`,
   `item_git_push()`), with the git program if installed, else dulwich (pure Python); a pull needs
   committed files, stops at conflicts without changes and loads the libraries again
-  (`reload_item_library()`); a push is refused if the remote is ahead; with dulwich the HTTPS
+  (`reload_metadata_library()`); a push is refused if the remote is ahead; with dulwich the HTTPS
   access token is kept in the system key store (`keyring`). New dependencies `dulwich` and
   `keyring` and `merge3` (dulwich merges changes at different places of one file), so
   `pip install redvypr` works without git. Library files are written only if their text changed
@@ -101,12 +106,12 @@ redvypr changelog
   merged with the running instance (set by the `DatasourceRegistry`), so later corrections reach
   old data; `DbReader.metadata_conflicts()`. Item library files (YAML or SQLite, e.g. an
   `inventory.sqlite`, by the suffix .sqlite/.sqlite3/.db: table `redvypr_metadata`, only the item
-  addresses are replaced): configuration `item_libraries`, `Redvypr.load_item_library()`,
-  `save_item_library()`. Several library files at once (e.g. `inventory_norlog.yaml`,
+  addresses are replaced): configuration `metadata_libraries`, `Redvypr.load_metadata_library()`,
+  `save_metadata_library()`. Several library files at once (e.g. `inventory_norlog.yaml`,
   `calibrations.yaml`): a library holds items and calibrations (entries with the key
   `calibration`, YAML sections `items` and `calibrations`); every address is saved back into
   the file it was loaded from, new ones into the first file holding their kind
-  (`assign_library_entries()`, `Redvypr.save_item_libraries()`, Items window "Save libraries"
+  (`assign_library_entries()`, `Redvypr.save_metadata_libraries()`, Items window "Save libraries"
   and "Save library as ...").
 - Items window (step 3, button "Items" in the main window and Tools menu "Items (inventory)"):
   tree of the items by parent at a chosen time, type filter, form of the selected item saved as
