@@ -1983,6 +1983,28 @@ class Redvypr(QtCore.QObject):
         data = self.redvyprreplyqueue.get()
         logger.debug(f"{funcname} Metadata sent successfully")
 
+    def add_note(
+            self,
+            address: str | RedvyprAddress,
+            text: str,
+            key: str = 'note',
+            valid_from: datetime.datetime | str | None = None,
+            valid_until: datetime.datetime | str | None = None
+    ) -> None:
+        """
+        Adds a note (a metadata entry marked 'persistent') to an address, valid from valid_from
+        (default now) until valid_until (default: until the next value of the key). The
+        address of a note for a datastream: redvypr.metadata.note_address(). A note is kept in
+        the configuration and the databases like all metadata and is found without the filters
+        naming the run of its host, so it applies to the data after a restart too. A new note
+        with the same key ends the previous one at its begin (like every metadata value): other
+        keys (note_service, note_weather, ...) for notes that stand beside each other.
+        """
+        if valid_from is None:
+            valid_from = datetime.datetime.now(datetime.timezone.utc)
+        self.add_metadata(address, {key: text}, constraints={'persistent': True},
+                          valid_from=valid_from, valid_until=valid_until)
+
     def get_known_devices(self):
         """ List all known devices that can be loaded by redvypr
         

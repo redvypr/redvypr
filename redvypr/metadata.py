@@ -12,7 +12,14 @@ logger = logging.getLogger('redvypr.metadata')
 TIME_KEYS = ('valid_from', 'valid_until')
 # 'source': where an entry comes from (e.g. 'library:items.yaml', 'db:nov.sqlite'),
 # see redvypr.metadata_sources; equal entries of different sources are merged
-NON_CONTEXT_KEYS = TIME_KEYS + ('hostinfo', 'source')
+# 'persistent': an entry (e.g. a note) that is kept beyond the run that wrote it: it is
+# found without the filters naming that run (see RUN_FILTER_KEYS), it is no context
+NON_CONTEXT_KEYS = TIME_KEYS + ('hostinfo', 'source', 'persistent')
+
+# Address filters naming the run and the network address of the host that wrote an entry
+# (uuid, addr and their local forms): they change with every start. Entries marked
+# 'persistent' are found without them; the name of the host (h) stays a filter.
+RUN_FILTER_KEYS = ('u', 'a', 'ul', 'al')
 
 # Address entries naming the source of a datastream
 SOURCE_KEYS = ('device', 'deviceid', 'sensorid', 'sensor')
@@ -21,6 +28,58 @@ SOURCE_KEYS = ('device', 'deviceid', 'sensorid', 'sensor')
 # get_metadata() does not parse every stored address again for every query
 _ADDRESS_CACHE = {}
 _ADDRESS_CACHE_MAX = 100000
+
+
+_RUN_FREE_CACHE = {}
+
+
+def _run_free_address(address_str):
+    """
+    The stored address without the filters naming the run of its host (RUN_FILTER_KEYS), None
+    if it has none of them. Cached.
+    """
+    try:
+        return _RUN_FREE_CACHE[address_str]
+    except KeyError:
+        pass
+    raddr = _parsed_address(address_str)[0]
+    names = {RedvyprAddress.PREFIX_MAP[k] for k in RUN_FILTER_KEYS}
+    free = None
+    if any(n in names for n in raddr.filter_keys):
+        free = RedvyprAddress(address_str)
+        for k in RUN_FILTER_KEYS:
+            free.delete_filter(k)
+    if len(_RUN_FREE_CACHE) >= _ADDRESS_CACHE_MAX:
+        _RUN_FREE_CACHE.clear()
+    _RUN_FREE_CACHE[address_str] = free
+    return free
+
+
+NOTE_SCOPES = ('all', 'host', 'device', 'channel')
+
+
+def note_address(datastream, scope: str = 'channel') -> str:
+    """
+    The address of a note for a datastream: scope 'all' (all data, '@'), 'host' (all data of its
+    host), 'device' (all channels of its device on that host) or 'channel' (this datakey of that
+    device). The run-specific parts of the datastream (uuid, address of the host) are left out.
+    """
+    if scope not in NOTE_SCOPES:
+        raise ValueError(f'scope {scope!r}, one of {NOTE_SCOPES}')
+    if scope == 'all':
+        return '@'
+    r = RedvyprAddress(datastream)
+    kw = {'host': r.host}
+    if scope in ('device', 'channel'):
+        kw.update(device=r.device, deviceid=r.deviceid)
+    datakey = r.left_expr if scope == 'channel' else None
+    if scope == 'channel' and not datakey:
+        raise ValueError('the datastream names no datakey')
+    kw = {k: v for k, v in kw.items() if v not in (None, '')}
+    if not kw:
+        raise ValueError('the datastream names no host or device')
+    return RedvyprAddress(datakey=datakey, **kw).to_address_string() if datakey else \
+        RedvyprAddress(**kw).to_address_string()
 
 
 def to_datetime(t):
@@ -513,7 +572,13 @@ def get_metadata(
         raddr, _, stored_source = _parsed_address(astr)
         if query_source and any(query_source.get(k) != v for k, v in stored_source.items()):
             continue
-        if raddress.matches(raddr):
+        matched_strict = raddress.matches(raddr)
+        matched = matched_strict
+        if not matched:
+            # 'persistent' entries are found without the filters naming the run of their host
+            free = _run_free_address(astr)
+            matched = free is not None and raddress.matches(free)
+        if matched:
             stored_list = statistics['metadata'].get(astr)
 
             if not isinstance(stored_list, list):
@@ -523,6 +588,8 @@ def get_metadata(
 
             for entry in stored_list:
                 constraints = entry.get('constraints', {})
+                if not matched_strict and not constraints.get('persistent'):
+                    continue
 
                 # --- A. TIME DIMENSION FILTER (wird bei 'all' übersprungen) ---
                 if mode != 'all':

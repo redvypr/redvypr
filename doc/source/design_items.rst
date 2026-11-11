@@ -507,6 +507,30 @@ completely before the metadata change (``progress(text, done, total)`` of
 ``item_git_import_bundle()``, ``item_git_clone_bundle()``; a callback may
 raise ``LoadCancelled``). The status line then says how long it took.
 
+**Notes** (metadata kept beyond a run). A note is a metadata entry with the
+constraint ``persistent`` (not part of the context). Device-sent metadata
+carry the filters ``u`` (uuid of the run) and ``a`` (address of the host) in
+their address, which change with every start, so an entry written in run 1
+would not match the data of run 2. Entries marked ``persistent`` are found
+**without** these filters (``RUN_FILTER_KEYS``: ``u``, ``a``, ``ul``,
+``al``): ``get_metadata()`` compares the stored address without them; the name
+of the host (``h``), the device and the channel stay filters. The address is
+stored as written. Entries without the mark and metadata of other redvypr
+instances (which are told apart by exactly this uuid) are compared as
+before. Notes stay where all generic metadata are: the configuration
+(``save_config()`` keeps everything that does not come from a library) and
+the databases written with the data; no library kind and no folder scheme
+for them (a measurement is small and has its database; if they are wanted in
+a library later: one file per measurement, YAML or SQLite by its suffix).
+
+"Add note ..." in the tab Generic: datastream (chosen, preset from the
+selected row), scope (all data, host, device, channel: ``note_address()``
+leaves the run-specific parts out), key (default ``note``), text, valid from
+(default now) and optional until; ``Redvypr.add_note()``. Like every
+metadata value a new note with the same key ends the previous one at its
+begin: other keys (``note_service``, ``note_weather``) for notes beside each
+other, and ``location`` or ``user`` of a host work the same way.
+
 Cross links: the item type in the title of an item is a link to the type in
 the tab Item types (in the Items window alone: the type editor opens); a type
 without definition (generic Item) says so and points to "From item".
