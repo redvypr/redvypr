@@ -81,17 +81,18 @@ class RedvyprMetadataWindow(QtWidgets.QWidget):
         self.btn_query = QtWidgets.QPushButton('Query ...')
         self.btn_query.setToolTip('The metadata of an address at a time or as a timeline')
         self.btn_query.clicked.connect(lambda: self.open_query())
-        self.btn_note = QtWidgets.QPushButton('Add note ...')
-        self.btn_note.setToolTip('A note on a datastream (or its device, host or all data) from a time on: kept '
-                                 'in the configuration and the databases, applies to the data after a restart too')
-        self.btn_note.clicked.connect(lambda: self.add_note())
+        self.btn_add = QtWidgets.QPushButton('Add metadata ...')
+        self.btn_add.setToolTip('Metadata for a datastream, its device, its host or all data, valid from a time '
+                                'on, e.g. location or user; "persistent": it applies to the data after a restart '
+                                'too')
+        self.btn_add.clicked.connect(lambda: self.add_entry())
         generic_tab = QtWidgets.QWidget()
         gl = QtWidgets.QVBoxLayout(generic_tab)
         gl.setContentsMargins(0, 0, 0, 0)
         gl.addWidget(self.generic, 1)
         gq = QtWidgets.QHBoxLayout()
         gq.addStretch(1)
-        gq.addWidget(self.btn_note)
+        gq.addWidget(self.btn_add)
         gq.addWidget(self.btn_query)
         gl.addLayout(gq)
         self.items = RedvyprItemsWidget(redvypr_instance=self.redvypr, embedded=True)
@@ -278,28 +279,30 @@ class RedvyprMetadataWindow(QtWidgets.QWidget):
         self.git_widget.raise_()
         return self.git_widget
 
-    def add_note(self, values: typing.Optional[dict] = None):
+    def add_entry(self, values: typing.Optional[dict] = None):
         """
-        A note on a datastream: the dialog asks for the datastream (preset: the row selected in the
-        table), scope, key, text and validity; values (address, key, text, valid_from, valid_until)
-        add the note without the dialog. Returns the values or None if cancelled.
+        Metadata for a datastream, device, host or all data: the dialog asks for the datastream
+        (preset: the row selected in the table), scope, key, value, validity and whether it is
+        persistent; values (address, key, value, valid_from, valid_until, persistent) add the
+        entry without the dialog. Returns the values or None if cancelled.
         """
         if values is None:
-            from redvypr.widgets.redvypr_note_dialog import NoteDialog
+            from redvypr.widgets.redvypr_metadata_entry_dialog import MetadataEntryDialog
             preset = None
             try:
                 row = self.generic.proxy_model.mapToSource(self.generic.table_view.currentIndex()).row()
                 preset = str(self.generic.base_model._raw_data[row].get('source_address', '')) or None
             except Exception:
                 preset = None
-            dlg = NoteDialog(self.redvypr, self, datastream=preset)
+            dlg = MetadataEntryDialog(self.redvypr, self, datastream=preset)
             if not dlg.exec():
                 return None
             values = dlg.values()
-        self.redvypr.add_note(values['address'], values['text'], key=values.get('key') or 'note',
-                              valid_from=values.get('valid_from'), valid_until=values.get('valid_until'))
+        self.redvypr.add_metadata(values['address'], {values['key']: values['value']},
+                                  valid_from=values.get('valid_from'), valid_until=values.get('valid_until'),
+                                  persistent=bool(values.get('persistent', True)))
         self.generic.refresh_and_clear_filters()
-        self.update_status(f"note added: {values['address']} {values.get('key') or 'note'}")
+        self.update_status(f"metadata added: {values['address']} {values['key']}")
         return values
 
     def open_query(self):

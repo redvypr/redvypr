@@ -1,10 +1,11 @@
 """
-Dialog for a note on a datastream (Metadata window, tab Generic, "Add note ...").
+Dialog for metadata of a datastream (Metadata window, tab Generic, "Add metadata ...").
 
-A note is a metadata entry marked "persistent" (redvypr.metadata): it is kept in the configuration
-and the databases like all metadata and found without the filters naming the run of its host, so it
-applies to the data after a restart too. Scope: all data, the host, the device or the channel of a
-datastream; the address is made by redvypr.metadata.note_address().
+Scope: all data, the host, the device or the channel of a datastream, e.g. the location or the user
+of a host from a time on; the address is made by redvypr.metadata.scope_address(). An entry marked
+"persistent" (redvypr.metadata) is found without the filters naming the run and the address of its
+host, so it applies to the data after a restart too. Like all metadata it is kept in the
+configuration and the databases.
 """
 
 import datetime
@@ -26,13 +27,13 @@ def _pydt(qdt: QtCore.QDateTime) -> datetime.datetime:
     return datetime.datetime.fromtimestamp(qdt.toMSecsSinceEpoch() / 1000, tz=datetime.timezone.utc)
 
 
-class NoteDialog(QtWidgets.QDialog):
-    """Datastream, scope, key, text and validity of a note."""
+class MetadataEntryDialog(QtWidgets.QDialog):
+    """Datastream, scope, key, value, validity and persistence of a metadata entry."""
 
     def __init__(self, redvypr_instance=None, parent=None, datastream: typing.Optional[str] = None):
         super().__init__(parent)
         self.redvypr = redvypr_instance
-        self.setWindowTitle('Add note')
+        self.setWindowTitle('Add metadata')
         self._manual_address = False
         self.datastream = QtWidgets.QLineEdit(datastream or '')
         self.datastream.setPlaceholderText("a datastream, e.g. sine @ d:'test_device' and h:'laptop1'")
@@ -40,21 +41,27 @@ class NoteDialog(QtWidgets.QDialog):
         self.btn_choose.setEnabled(redvypr_instance is not None)
         self.btn_choose.clicked.connect(self.choose_datastream)
         self.scope = QtWidgets.QComboBox()
-        for scope in redvypr_metadata.NOTE_SCOPES:
+        for scope in redvypr_metadata.ADDRESS_SCOPES:
             self.scope.addItem(SCOPE_TEXTS[scope], scope)
-        self.scope.setCurrentIndex(redvypr_metadata.NOTE_SCOPES.index('device'))
-        self.scope.setToolTip('The note applies to all data, to all data of the host, to all channels of the '
+        self.scope.setCurrentIndex(redvypr_metadata.ADDRESS_SCOPES.index('host'))
+        self.scope.setToolTip('The metadata apply to all data, to all data of the host, to all channels of the '
                               'device or to the channel of the datastream')
         self.address = QtWidgets.QLineEdit()
-        self.address.setToolTip('Address of the note, made from the datastream and the scope (without the parts '
-                                'that change with every start); can be edited')
+        self.address.setToolTip('Address of the metadata, made from the datastream and the scope (without the '
+                                'parts that change with every start); can be edited')
         self.address.textEdited.connect(lambda _t: setattr(self, '_manual_address', True))
-        self.key = QtWidgets.QLineEdit('note')
-        self.key.setToolTip('A new note with the same key ends the previous one at its begin (like every '
-                            'metadata value): other keys (note_service, note_weather, ...) for notes that '
+        self.key = QtWidgets.QLineEdit()
+        self.key.setPlaceholderText('e.g. location, user, comment')
+        self.key.setToolTip('A new value of the same key ends the previous one at its begin (like every metadata '
+                            'value): use other keys (comment_service, comment_weather, ...) for values that '
                             'stand beside each other')
         self.text = QtWidgets.QPlainTextEdit()
-        self.text.setPlaceholderText('the note')
+        self.text.setPlaceholderText('the value (text)')
+        self.persistent = QtWidgets.QCheckBox('persistent')
+        self.persistent.setChecked(True)
+        self.persistent.setToolTip('Found without the filters naming the run and the address of the host that '
+                                   'wrote it (uuid, addr): it applies to the data after a restart too. The '
+                                   'host name, the device and the channel stay filters.')
         self.valid_from = QtWidgets.QDateTimeEdit(_qdt(datetime.datetime.now(datetime.timezone.utc)))
         self.valid_from.setDisplayFormat('yyyy-MM-dd HH:mm:ss UTC')
         self.valid_from.setTimeZone(QtCore.QTimeZone.utc())
@@ -76,7 +83,8 @@ class NoteDialog(QtWidgets.QDialog):
         lay.addRow('Scope', self.scope)
         lay.addRow('Address', self.address)
         lay.addRow('Key', self.key)
-        lay.addRow('Note', self.text)
+        lay.addRow('Value', self.text)
+        lay.addRow('', self.persistent)
         lay.addRow('Valid from', self.valid_from)
         until = QtWidgets.QHBoxLayout()
         until.addWidget(self.use_until)
@@ -104,13 +112,13 @@ class NoteDialog(QtWidgets.QDialog):
             self.datastream.setText(address_dict['address_str'])
 
     def update_address(self):
-        """The address of the note from the datastream and the scope (unless the address was edited)."""
+        """The address from the datastream and the scope (unless the address was edited)."""
         if self._manual_address:
             return
         scope = self.scope.currentData()
         text = self.datastream.text().strip()
         try:
-            self.address.setText(redvypr_metadata.note_address(text, scope) if (text or scope == 'all') else '')
+            self.address.setText(redvypr_metadata.scope_address(text, scope) if (text or scope == 'all') else '')
             self.status.setText('')
         except Exception as e:
             self.address.setText('')
@@ -118,24 +126,25 @@ class NoteDialog(QtWidgets.QDialog):
 
     # --- result ---
     def values(self) -> dict:
-        """address, key, text, valid_from, valid_until (None) of the note."""
+        """address, key, value, valid_from, valid_until (None) and persistent of the entry."""
         return {'address': self.address.text().strip(), 'key': self.key.text().strip(),
-                'text': self.text.toPlainText().strip(), 'valid_from': _pydt(self.valid_from.dateTime()),
-                'valid_until': _pydt(self.valid_until.dateTime()) if self.use_until.isChecked() else None}
+                'value': self.text.toPlainText().strip(), 'valid_from': _pydt(self.valid_from.dateTime()),
+                'valid_until': _pydt(self.valid_until.dateTime()) if self.use_until.isChecked() else None,
+                'persistent': self.persistent.isChecked()}
 
     def problem(self) -> typing.Optional[str]:
         """What is wrong with the values, None if they are fine."""
         v = self.values()
         if not v['address']:
-            return 'the note needs an address: choose a datastream and a scope'
+            return 'the metadata need an address: choose a datastream and a scope'
         try:
             RedvyprAddress(v['address'])
         except Exception as e:
             return f'address: {e}'
         if not v['key'] or "'" in v['key'] or '"' in v['key']:
             return 'the key must not be empty or contain quotes'
-        if not v['text']:
-            return 'the note is empty'
+        if not v['value']:
+            return 'the value is empty'
         if v['valid_until'] is not None and v['valid_until'] <= v['valid_from']:
             return '"until" must be later than "valid from"'
         return None

@@ -12,8 +12,8 @@ logger = logging.getLogger('redvypr.metadata')
 TIME_KEYS = ('valid_from', 'valid_until')
 # 'source': where an entry comes from (e.g. 'library:items.yaml', 'db:nov.sqlite'),
 # see redvypr.metadata_sources; equal entries of different sources are merged
-# 'persistent': an entry (e.g. a note) that is kept beyond the run that wrote it: it is
-# found without the filters naming that run (see RUN_FILTER_KEYS), it is no context
+# 'persistent': an entry (e.g. the location or the user of a host) that holds beyond the run that
+# wrote it: it is found without the filters naming that run (see RUN_FILTER_KEYS), it is no context
 NON_CONTEXT_KEYS = TIME_KEYS + ('hostinfo', 'source', 'persistent')
 
 # Address filters naming the run and the network address of the host that wrote an entry
@@ -55,17 +55,17 @@ def _run_free_address(address_str):
     return free
 
 
-NOTE_SCOPES = ('all', 'host', 'device', 'channel')
+ADDRESS_SCOPES = ('all', 'host', 'device', 'channel')
 
 
-def note_address(datastream, scope: str = 'channel') -> str:
+def scope_address(datastream, scope: str = 'channel') -> str:
     """
-    The address of a note for a datastream: scope 'all' (all data, '@'), 'host' (all data of its
+    The address of metadata for a datastream: scope 'all' (all data, '@'), 'host' (all data of its
     host), 'device' (all channels of its device on that host) or 'channel' (this datakey of that
     device). The run-specific parts of the datastream (uuid, address of the host) are left out.
     """
-    if scope not in NOTE_SCOPES:
-        raise ValueError(f'scope {scope!r}, one of {NOTE_SCOPES}')
+    if scope not in ADDRESS_SCOPES:
+        raise ValueError(f'scope {scope!r}, one of {ADDRESS_SCOPES}')
     if scope == 'all':
         return '@'
     r = RedvyprAddress(datastream)

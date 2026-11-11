@@ -1932,7 +1932,8 @@ class Redvypr(QtCore.QObject):
             metadata: dict,
             constraints: dict | None = None,
             valid_from: datetime.datetime | str | None = None,
-            valid_until: datetime.datetime | str | None = None
+            valid_until: datetime.datetime | str | None = None,
+            persistent: bool = False
     ) -> None:
         """
         Adds metadata to a specific address with optional context or time constraints.
@@ -1952,6 +1953,12 @@ class Redvypr(QtCore.QObject):
         valid_until : datetime.datetime or str, optional
             The UTC ending timestamp for the metadata validity. If None, the
             metadata remains valid indefinitely until explicitly overwritten or removed.
+        persistent : bool, default False
+            Marks the entries as persistent (e.g. the location or the user of a host): they are
+            found without the filters naming the run and the address of the host that wrote them
+            (uuid, addr), so they apply to the data after a restart too; the host name, the device
+            and the channel stay filters. See redvypr.metadata.scope_address() for the address of
+            a datastream, its device, its host or all data.
 
         Returns
         -------
@@ -1967,6 +1974,8 @@ class Redvypr(QtCore.QObject):
         logger.debug(funcname)
 
 
+        if persistent:
+            constraints = dict(constraints or {}, persistent=True)
         metadata_dict = redvypr_metadata.create_metadata_dict(address=address,
                                               metadata=metadata,
                                               constraints=constraints,
@@ -1982,28 +1991,6 @@ class Redvypr(QtCore.QObject):
         self.redvyprqueue.put(datapacket)
         data = self.redvyprreplyqueue.get()
         logger.debug(f"{funcname} Metadata sent successfully")
-
-    def add_note(
-            self,
-            address: str | RedvyprAddress,
-            text: str,
-            key: str = 'note',
-            valid_from: datetime.datetime | str | None = None,
-            valid_until: datetime.datetime | str | None = None
-    ) -> None:
-        """
-        Adds a note (a metadata entry marked 'persistent') to an address, valid from valid_from
-        (default now) until valid_until (default: until the next value of the key). The
-        address of a note for a datastream: redvypr.metadata.note_address(). A note is kept in
-        the configuration and the databases like all metadata and is found without the filters
-        naming the run of its host, so it applies to the data after a restart too. A new note
-        with the same key ends the previous one at its begin (like every metadata value): other
-        keys (note_service, note_weather, ...) for notes that stand beside each other.
-        """
-        if valid_from is None:
-            valid_from = datetime.datetime.now(datetime.timezone.utc)
-        self.add_metadata(address, {key: text}, constraints={'persistent': True},
-                          valid_from=valid_from, valid_until=valid_until)
 
     def get_known_devices(self):
         """ List all known devices that can be loaded by redvypr

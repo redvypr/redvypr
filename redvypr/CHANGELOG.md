@@ -7,12 +7,13 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
-- Notes: metadata entries marked `persistent` (constraint, not part of the context) are found
-  without the filters naming the run and the address of the host that wrote them (`u`, `a`, `ul`,
-  `al`; the host name stays a filter), so a note written in one run applies to the data after a
-  restart (`metadata.RUN_FILTER_KEYS`, `get_metadata()`; entries without the mark and metadata of
-  other instances are compared as before). `Redvypr.add_note()`, `metadata.note_address()` (scope
-  all data, host, device, channel) and "Add note ..." in the tab Generic of the Metadata window.
+- Persistent metadata: entries marked `persistent` (constraint, not part of the context), e.g. the
+  location or the user of a host, are found without the filters naming the run and the address of
+  the host that wrote them (`u`, `a`, `ul`, `al`; the host name stays a filter), so they apply to
+  the data after a restart (`metadata.RUN_FILTER_KEYS`, `get_metadata()`; entries without the mark
+  and metadata of other instances are compared as before). `Redvypr.add_metadata(...,
+  persistent=True)`, `metadata.scope_address()` (scope all data, host, device, channel) and "Add
+  metadata ..." in the tab Generic of the Metadata window.
 - The libraries are metadata libraries (they hold items, item types and calibrations): the
   configuration key is `metadata_libraries` (the former `item_libraries` is still read),
   `Redvypr.metadata_libraries`, `load_metadata_library()`, `save_metadata_library()`,
