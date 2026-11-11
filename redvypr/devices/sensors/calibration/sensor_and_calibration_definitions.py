@@ -160,7 +160,7 @@ class BaseSensor(redvypr_items.Item):
 
 
 # Classic heat flow sensor
-class HeatflowClassicCalibData(BaseModel):
+class HfCalibData(BaseModel):
     """Represents calibration coefficients and related data for a heat flow sensor."""
 
     model_config = ConfigDict(extra='forbid')
@@ -211,16 +211,16 @@ class HeatflowClassicCalibData(BaseModel):
 
 
 
-class HeatflowClassicCalibration(BaseModel):
-    """Represents the full calibration data (CalibrationGeneric) for a Heatflow Classic sensor."""
+class HfCalibration(BaseModel):
+    """Represents the full calibration data (CalibrationGeneric) for a heat flux sensor."""
 
     model_config = ConfigDict(
         extra='forbid'
     )
 
     # Literal für die Kalibrierungsfamilie
-    calibration_type: Literal['heatflow_classic'] = Field(
-        default='heatflow_classic',
+    calibration_type: Literal['hf_sensor'] = Field(
+        default='hf_sensor',
         description="Type of the calibration (fixed to 'heatflow')."
     )
 
@@ -243,7 +243,7 @@ class HeatflowClassicCalibration(BaseModel):
         default=None,
         description="Standard deviation of the heat flux calibration value."
     )
-    calibration_data: List['HeatflowClassicCalibData'] = Field(
+    calibration_data: List['HfCalibData'] = Field(
         default_factory=list,
         description="List of calibration datasets."
     )
@@ -282,8 +282,8 @@ class HeatflowClassicCalibration(BaseModel):
 
     @property
     def sensor_model(self):
-        """The item type of the sensor (heatflow_classic); the series is the field series."""
-        return HeatflowClassicSensor.ITEMTYPE
+        """The item type of the sensor (hf_sensor); the series is the field series."""
+        return HfSensor.ITEMTYPE
 
     @property
     def unit(self):
@@ -361,7 +361,7 @@ class HeatflowClassicCalibration(BaseModel):
 
         for dataset in value:
             if 'calibcoeff' in dataset:
-                dataset['calibcoeff'] = HeatflowClassicCalibData.preprocess_calibcoeff(
+                dataset['calibcoeff'] = HfCalibData.preprocess_calibcoeff(
                     dataset['calibcoeff'])
 
         return value
@@ -395,7 +395,7 @@ class HeatflowClassicCalibration(BaseModel):
 
     def __eq__(self, other: Any) -> bool:
         """Enables equality comparison based on the data hash."""
-        if not isinstance(other, HeatflowClassicCalibration):
+        if not isinstance(other, HfCalibration):
             return False
         return self.get_data_hash() == other.get_data_hash()
 
@@ -406,13 +406,13 @@ class HeatflowClassicCalibration(BaseModel):
 
 
 
-class HeatflowClassicSensor(BaseSensor):
+class HfSensor(BaseSensor):
     """
-    Specialized class for Heatflow Classic sensors.
-    Inherits from BaseSensor and adds specific fields for Heatflow Classic sensors.
+    Specialized class for heat flux sensor.
+    Inherits from BaseSensor and adds specific fields for heat flux sensor.
     """
 
-    ITEMTYPE: typing.ClassVar[str] = 'heatflow_classic'
+    ITEMTYPE: typing.ClassVar[str] = 'hf_sensor'
     REVISION: typing.ClassVar[int] = 1
 
     # Additional attributes to BaseSensor
@@ -422,35 +422,35 @@ class HeatflowClassicSensor(BaseSensor):
     )
     series: str = Field(
         default="",
-        description="Series or model of the Heatflow Classic sensor."
+        description="Series or model of the heat flux sensor."
     )
 
     @classmethod
     def from_calibration(
         cls,
-        calibration: 'HeatflowClassicCalibration',
+        calibration: 'HfCalibration',
         name: str,
         sn: str,
         **kwargs
-    ) -> 'HeatflowClassicSensor':
+    ) -> 'HfSensor':
         """
-        Creates a HeatflowClassicSensor instance from a HeatflowClassicCalibration object.
+        Creates a HfSensor instance from a HfCalibration object.
 
         Args:
-            calibration: An instance of HeatflowClassicCalibration.
+            calibration: An instance of HfCalibration.
             name: Name of the sensor.
             sn: Serial number of the sensor.
             **kwargs: Additional keyword arguments for the sensor.
 
         Returns:
-            HeatflowClassicSensor: An instance of the Heatflow Classic sensor.
+            HfSensor: An instance of the heat flux sensor.
         """
         return cls(
             name=name,
             sn=sn,
             series=calibration.series,
             date_produced=calibration.date_produced,
-            description=calibration.comment or f"Heatflow Classic Sensor: {calibration.series}",
+            description=calibration.comment or f"Heat flux sensor: {calibration.series}",
             **kwargs
         )
 
@@ -542,7 +542,7 @@ class SensorFactory:
 
 # Registration of the sensor classes: sensor types of the factory and item types of the
 # redvypr metadata (Items window, items.get_item())
-for _cls in (BaseSensor, HeatflowClassicSensor, TarSensor):
+for _cls in (BaseSensor, HfSensor, TarSensor):
     SensorFactory.register(_cls.ITEMTYPE, _cls)
     redvypr_items.register_item_type(_cls)
 
@@ -613,5 +613,5 @@ CalibrationFactory.register('linearfactor', CalibrationLinearFactor)
 CalibrationFactory.register('polynom', CalibrationPoly)
 CalibrationFactory.register('ntc', CalibrationNTC)
 CalibrationFactory.register('generic', CalibrationGeneric)
-CalibrationFactory.register('heatflow_classic', HeatflowClassicCalibration)
+CalibrationFactory.register('hf_sensor', HfCalibration)
 

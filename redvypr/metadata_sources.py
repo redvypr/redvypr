@@ -405,9 +405,9 @@ def _write_sqlite_items(path: str, out: dict):
 # file per address (an item, an item type, a calibration), at a path made of its kind and
 # names (library_file_of()), e.g.
 #
-#     items/heatflow_classic/0614.yaml
+#     items/hf_sensor/0614.yaml
 #     item_types/calypso_CMI1018.yaml
-#     calibrations/heatflow_classic/0614/2021-09-14T202100_1a2b3c4d.yaml
+#     calibrations/hf_sensor/0614/2021-09-14T202100_1a2b3c4d.yaml
 #
 # Every file has the format of a YAML library (sections items, item_types, calibrations), so it
 # can be read alone as well. The directory is marked by the file redvypr_library.yaml. Saving

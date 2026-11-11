@@ -26,8 +26,8 @@ def ntc(sn, date):
 
 def storage_with_everything():
     s = {}
-    items.add_item(s, sd.HeatflowClassicSensor(sn='0614', name='F-002-4_0614'), valid_from=T0)
-    items.add_item(s, items.Item(itemtype='ntc_sensor', id='0614-ntc', parent='heatflow_classic/0614'),
+    items.add_item(s, sd.HfSensor(sn='0614', name='F-002-4_0614'), valid_from=T0)
+    items.add_item(s, items.Item(itemtype='ntc_sensor', id='0614-ntc', parent='hf_sensor/0614'),
                    valid_from=T0)
     it.add_definition(s, it.TypeDefinition(name='gadget_x', description='a gadget'), valid_from=T0)
     for cal in (ntc('0614-ntc', datetime.datetime(2021, 9, 14, 20, 21, tzinfo=UTC)),
@@ -44,29 +44,29 @@ def test_one_file_per_address_and_back(tmp_path):
     rel = sorted(os.path.relpath(f, d).replace(os.sep, '/') for f in ms.directory_library_files(d))
     assert rel[:2] == ['calibrations/ntc_sensor/0614-ntc/20210914T202100_' + rel[0].split('_')[-1],
                        'calibrations/ntc_sensor/0614-ntc/20220101T000000_' + rel[1].split('_')[-1]]
-    assert rel[2:] == ['item_types/gadget_x.yaml', 'items/heatflow_classic/0614.yaml',
+    assert rel[2:] == ['item_types/gadget_x.yaml', 'items/hf_sensor/0614.yaml',
                        'items/ntc_sensor/0614-ntc.yaml']
     assert os.path.exists(os.path.join(d, ms.LIBRARY_MARKER))
     back = ms.read_library_storage(d)
     assert sorted(back) == sorted(ms.library_entries(s))
     lib = ms.load_item_library(d)
     assert all(e['constraints']['source'] == 'library:hf_classic' for es in lib.values() for e in es)
-    assert items.get_item(lib, 'heatflow_classic/0614', at_time=T1).name == 'F-002-4_0614'
+    assert items.get_item(lib, 'hf_sensor/0614', at_time=T1).name == 'F-002-4_0614'
     assert len(ic.calibrations_of_item(lib, items.get_item(lib, 'ntc_sensor/0614-ntc', at_time=T1))) == 2
     # every file alone is a library as well
-    one = os.path.join(d, 'items', 'heatflow_classic', '0614.yaml')
-    assert list(ms.read_library_storage(one)) == [items.item_address('heatflow_classic', '0614')]
+    one = os.path.join(d, 'items', 'hf_sensor', '0614.yaml')
+    assert list(ms.read_library_storage(one)) == [items.item_address('hf_sensor', '0614')]
 
 
 def test_only_changed_files_are_written_and_gone_ones_removed(tmp_path):
     d = str(tmp_path / 'lib')
     s = storage_with_everything()
     ms.save_item_library(d, s)
-    f_hf = os.path.join(d, 'items', 'heatflow_classic', '0614.yaml')
+    f_hf = os.path.join(d, 'items', 'hf_sensor', '0614.yaml')
     f_ntc = os.path.join(d, 'items', 'ntc_sensor', '0614-ntc.yaml')
     old = {f: os.path.getmtime(f) for f in (f_hf, f_ntc)}
     time.sleep(0.05)
-    items.add_item(s, sd.HeatflowClassicSensor(sn='0614', name='renamed'), valid_from=T1)
+    items.add_item(s, sd.HfSensor(sn='0614', name='renamed'), valid_from=T1)
     ms.save_item_library(d, s)
     assert os.path.getmtime(f_hf) != old[f_hf] and os.path.getmtime(f_ntc) == old[f_ntc]
     # an address gone: its file and empty directories are removed, other files stay
@@ -85,12 +85,12 @@ def test_redvypr_with_directory_library(tmp_path):
     ms.save_item_library(d, storage_with_everything())
     r = redvypr.Redvypr(hostname='dirlib')
     r.load_item_library(d)
-    assert r.get_item('heatflow_classic/0614') is not None
+    assert r.get_item('hf_sensor/0614') is not None
     # a new sensor: goes into the directory library (first library of its kind), one new file
-    r.add_item(sd.HeatflowClassicSensor(sn='0615'), valid_from=T1)
+    r.add_item(sd.HfSensor(sn='0615'), valid_from=T1)
     saved = r.save_item_libraries()
     assert saved[d] == 6
-    assert os.path.exists(os.path.join(d, 'items', 'heatflow_classic', '0615.yaml'))
+    assert os.path.exists(os.path.join(d, 'items', 'hf_sensor', '0615.yaml'))
     assert r.get_config().item_libraries == [d]
     # types next to the directory and in its item_types directory are search paths
     paths = ms.type_search_paths(d)

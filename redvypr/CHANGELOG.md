@@ -7,6 +7,8 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- Heat flux sensor type named `hf_sensor` (calibration type `hf_sensor`, classes `HfSensor`,
+  `HfCalibration`, `HfCalibData`; the generation "classic" is the field `hw_revision`).
 - Metadata window (button "Metadata" in the main window, Tools menu "Metadata ..."; replaces
   "Edit Metadata" and "Items"): bar with libraries, "Save libraries", "Git ..." and the state time
   for all tabs; tabs Generic (metadata table without items, item types and calibrations unless
@@ -16,7 +18,7 @@ redvypr changelog
   Cross links: the type in the title of an item opens it in the tab Item types, "Show items" in the
   type editor shows the items of the type, a calibration shows its sensor.
 - Sensors and calibrations (design note section "Sensors, calibrations and the sensor manager",
-  step 1): sensor types of the sensor manager named per model in English (`heatflow_classic`,
+  step 1): sensor types of the sensor manager named per model in English (`hf_sensor`,
   `tar_sensor`, `base_sensor`), field `sensortype` removed (the `SensorFactory` uses `itemtype`,
   a key `sensortype` of a sensor file is read as item type), older sensor format (`@i:sensor`)
   dropped, `date_produced` optional; norlog type `hf_sensor` removed. Calibrations are found by
@@ -31,7 +33,7 @@ redvypr changelog
   Step 3: sensor manager with a fixed tab "Sensors (items)" (sensors of the metadata, open the
   Items window, import sensor files into the metadata), no new sensor lists; applying a
   calibration list creates missing sensor items, loading from the metadata fixed.
-  `HeatflowClassicCalibration.raw2data()` (mV x `calibration_HF_SI`, W m-2); profile channels
+  `HfCalibration.raw2data()` (mV x `calibration_HF_SI`, W m-2); profile channels
   name their raw unit (`raw_unit`, hf0/hf1: V), converted into the input unit of the calibration
   by SI prefix (`item_calibration.unit_factor()`).
 - git for the item libraries (`redvypr.item_git`): status, commit, pull and push of the item files
@@ -125,7 +127,7 @@ redvypr changelog
 
 ### Changed
 - Sensor and calibration manager (items step 6): `BaseSensor` derives from `redvypr.items.Item`
-  (itemtype = sensortype, id = sn); `BaseSensor`, `HeatflowClassicSensor` and `TarSensor` are item
+  (itemtype = sensortype, id = sn); `BaseSensor`, `HfSensor` and `TarSensor` are item
   types (Items window, tree, history per field). Sensors with a serial number are written to the
   metadata as items (one key per field) instead of one key `sensor` at
   `@i:sensor and sn==...`; sensors stored that way by older versions are still read.
@@ -248,8 +250,8 @@ redvypr changelog
 ### Fixed
 - `RedvyprMetadataTable` without an address failed (a layout was hidden), so "Edit Metadata" did
   not open; it no longer prints all metadata to the console when loading.
-- `HeatflowClassicCalibration` without `calibration_uuid` failed (uuid5 with a text namespace);
-  its `sensor_model` is the item type `heatflow_classic` (the series stays the field `series`).
+- `HfCalibration` without `calibration_uuid` failed (uuid5 with a text namespace);
+  its `sensor_model` is the item type `hf_sensor` (the series stays the field `series`).
 - `ot_cli`: single-value answers (`ot state`, `channel`, `rloc16`, ...) only accept a line of the expected
   form; a log line of the firmware split into the response no longer shows up as Thread role of the gateway
 - db writer config widget: field "UID keys" per table; before, applying the configuration in the GUI

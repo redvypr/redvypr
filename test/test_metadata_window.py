@@ -29,7 +29,7 @@ def window(tmp_path):
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     s = {}
     items.add_item(s, items.Item(itemtype='ntc_sensor', id='N1'), valid_from=T0)
-    items.add_item(s, sd.HeatflowClassicSensor(sn='HF1'), valid_from=T0)
+    items.add_item(s, sd.HfSensor(sn='HF1'), valid_from=T0)
     for cal in (ntc('N1', datetime.datetime(2025, 1, 1, tzinfo=UTC)),
                 ntc('N1', datetime.datetime(2026, 6, 1, tzinfo=UTC)),
                 ntc('N9', datetime.datetime(2026, 6, 1, tzinfo=UTC))):        # N9: no item
@@ -110,9 +110,9 @@ def test_calibrations_tab(window):
 
 def test_item_selection_reaches_the_types_tab(window):
     r, w = window
-    w.show_item('heatflow_classic/HF1')
+    w.show_item('hf_sensor/HF1')
     w._item_selected()
-    assert w.types._item is not None and w.types._item.ref == 'heatflow_classic/HF1'
+    assert w.types._item is not None and w.types._item.ref == 'hf_sensor/HF1'
 
 
 def test_main_window_button(tmp_path):
@@ -133,18 +133,18 @@ def test_main_window_button(tmp_path):
 def test_cross_links_between_items_and_types(window):
     r, w = window
     # item -> type: the link in the title of the item
-    w.show_item('heatflow_classic/HF1')
-    assert 'href="type:heatflow_classic"' in w.items.title.text()
-    w.items._title_link('type:heatflow_classic')
+    w.show_item('hf_sensor/HF1')
+    assert 'href="type:hf_sensor"' in w.items.title.text()
+    w.items._title_link('type:hf_sensor')
     assert w.tabs.tabText(w.tabs.currentIndex()) == 'Item types'
-    assert w.types.current == 'heatflow_classic' and w.types.list.currentItem().text(0) == 'heatflow_classic'
+    assert w.types.current == 'hf_sensor' and w.types.list.currentItem().text(0) == 'hf_sensor'
     # type -> items: "Show items" filters the tab Items to the type
     assert w.types.btn_items.isEnabled()
     w.types.btn_items.click()
     assert w.tabs.tabText(w.tabs.currentIndex()) == 'Items'
-    assert w.items.type_filter.currentData() == 'heatflow_classic'
+    assert w.items.type_filter.currentData() == 'hf_sensor'
     refs = [w.items.tree.topLevelItem(i).text(0) for i in range(w.items.tree.topLevelItemCount())]
-    assert refs == ['heatflow_classic/HF1']
+    assert refs == ['hf_sensor/HF1']
     # a type without definition (generic Item): message in the type editor
     r.add_item(items.Item(itemtype='undefined_type_q7', id='G'), valid_from=T0)
     assert not w.show_type('undefined_type_q7')

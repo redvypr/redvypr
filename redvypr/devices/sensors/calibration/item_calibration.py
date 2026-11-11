@@ -274,7 +274,7 @@ def apply_calibration(storage: dict, address, raw, at_time=None, calibrations=No
 # Item type of the sensor of a calibration type, if the calibration does not name it
 # (sensor_model NA): used to create the sensor item when a calibration is imported
 CALIBRATION_ITEMTYPES = {
-    'heatflow_classic': 'heatflow_classic',
+    'hf_sensor': 'hf_sensor',
     'ntc': 'ntc_sensor',
 }
 
@@ -376,9 +376,9 @@ def import_calibrations(redvypr_instance, calibrations, item=None) -> list:
 
 def _new_sensor_item(itemtype, sn, cal):
     from redvypr import items as ritems_
-    from .sensor_and_calibration_definitions import HeatflowClassicSensor, HeatflowClassicCalibration
-    if itemtype == HeatflowClassicSensor.ITEMTYPE and isinstance(cal, HeatflowClassicCalibration):
-        return HeatflowClassicSensor.from_calibration(cal, name=cal.name or None, sn=sn)
+    from .sensor_and_calibration_definitions import HfSensor, HfCalibration
+    if itemtype == HfSensor.ITEMTYPE and isinstance(cal, HfCalibration):
+        return HfSensor.from_calibration(cal, name=cal.name or None, sn=sn)
     return ritems_.get_item_type(itemtype)(itemtype=itemtype, id=sn)
 
 

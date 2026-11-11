@@ -38,7 +38,7 @@ def window(tmp_path):
     inv = str(tmp_path / 'inventory_norlog.yaml')
     s = {}
     items.add_item(s, items.Item(itemtype='ntc_sensor', id='0042'), valid_from=T0)
-    items.add_item(s, sd.HeatflowClassicSensor(sn='0042', name='hf'), valid_from=T0)
+    items.add_item(s, sd.HfSensor(sn='0042', name='hf'), valid_from=T0)
     ms.save_item_library(inv, s)
     r = redvypr.Redvypr(hostname='calatt')
     r.load_item_library(inv)
@@ -68,7 +68,7 @@ def test_import_calibrations_by_serial_number_and_type(window):
     assert w.calibrations.rowCount() == 2
     assert [w.calibrations.item(i, 1).text() for i in range(2)] == ['', 'yes']      # the newer one is valid
     # the heat flux sensor with the same serial number does not get the NTC calibrations
-    select(w, 'heatflow_classic/0042')
+    select(w, 'hf_sensor/0042')
     assert w.calibrations.rowCount() == 0
     # saved: new calibrations go into calibrations.yaml next to the inventory
     saved = r.save_item_libraries()
@@ -94,25 +94,25 @@ def test_attachments(window):
     r, w, tmp, inv = window
     photo = tmp / 'photo.jpg'
     photo.write_bytes(b'\xff\xd8 not really a jpeg')
-    select(w, 'heatflow_classic/0042')
+    select(w, 'hf_sensor/0042')
     att = w.add_attachment(str(photo), description='mounted')
     assert att is not None and w.attachments.rowCount() == 1
     base = r.item_attachments_folder()
     assert base == os.path.join(os.path.dirname(inv), 'attachments')
-    path = os.path.join(base, 'heatflow_classic', '0042', att.attachment_uuid, 'photo.jpg')
+    path = os.path.join(base, 'hf_sensor', '0042', att.attachment_uuid, 'photo.jpg')
     assert os.path.exists(path)
-    got = ia.attachments_of(r.get_item('heatflow_classic/0042'))
+    got = ia.attachments_of(r.get_item('hf_sensor/0042'))
     assert [(a.file_name, a.description) for a in got] == [('photo.jpg', 'mounted')]
     # the form does not show the list, saving the form keeps it
     assert 'attachments' not in w.form_fields
     w.form_fields['name'][0].setText('hf renamed')
     w.save_item()
-    assert len(ia.attachments_of(r.get_item('heatflow_classic/0042'))) == 1
-    assert r.get_item('heatflow_classic/0042').name == 'hf renamed'
+    assert len(ia.attachments_of(r.get_item('hf_sensor/0042'))) == 1
+    assert r.get_item('hf_sensor/0042').name == 'hf renamed'
     # saved into the library and back
     r.save_item_libraries()
     lib = ms.load_item_library(inv)
-    assert ia.attachments_of(items.get_item(lib, 'heatflow_classic/0042'))[0].sha256 == att.sha256
+    assert ia.attachments_of(items.get_item(lib, 'hf_sensor/0042'))[0].sha256 == att.sha256
     # remove: entry and file
     assert w.remove_attachment(att.attachment_uuid, confirm=lambda t: True)
     assert not os.path.exists(path) and w.attachments.rowCount() == 0
@@ -120,13 +120,13 @@ def test_attachments(window):
 
 def test_heatflow_calibration_creates_its_sensor(window):
     r, _w, _tmp, _inv = window
-    cal = sd.HeatflowClassicCalibration(calibration_date='2026-03-01T10:00:00', date_produced='2025-12-01T00:00:00',
+    cal = sd.HfCalibration(calibration_date='2026-03-01T10:00:00', date_produced='2025-12-01T00:00:00',
                                         manufacturer_sn='HF-0815', series='classic 50x50', calibration_HF_SI=12.3,
                                         calibration_data=[])
-    assert cal.sensor_model == 'heatflow_classic' and cal.calibration_uuid.startswith('CALHFC_')
+    assert cal.sensor_model == 'hf_sensor' and cal.calibration_uuid.startswith('CALHFC_')
     (_c, ref, created), = ic.import_calibrations(r, [cal])
-    assert ref == 'heatflow_classic/HF-0815' and created
+    assert ref == 'hf_sensor/HF-0815' and created
     hf = r.get_item(ref)
-    assert isinstance(hf, sd.HeatflowClassicSensor) and hf.series == 'classic 50x50'
+    assert isinstance(hf, sd.HfSensor) and hf.series == 'classic 50x50'
     assert [ic.calibration_summary(c) for c in ic.calibrations_of_item(r._copy_metadata(), hf)] == \
         ['calibration_HF_SI = 12.3']

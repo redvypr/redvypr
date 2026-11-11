@@ -210,7 +210,7 @@ with an id chip on the board. Example::
     norlog_v02/N-012          deviceid: 0xA1B2...
      +- breakout_board_v01/BO-003   parent: norlog_v02/N-012   R1: 10002.7 Ohm
          +- ntc_sensor/0042   parent: breakout_board_v01/BO-003, slot: ntc0
-         +- heatflow_classic/HF-17   parent: breakout_board_v01/BO-003, slot: hf0
+         +- hf_sensor/HF-17   parent: breakout_board_v01/BO-003, slot: hf0
 
 The slot is free: the channel name (``ntc0``) is the simplest case and needs
 nothing else. Who wants the terminals uses them (``J2.3-4``) and a setup
@@ -360,7 +360,7 @@ needed (only one user, no stored data with the old formats).
 
 **A sensor is an item.** The sensors of the sensor manager (``BaseSensor``
 and its subclasses) are item types: one type per sensor model, named in
-English (``heatflow_classic``, ``tar_sensor``), id = serial number
+English (``hf_sensor``, ``tar_sensor``), id = serial number
 (``sn``). The field ``sensortype`` of the manager is the item type
 (``itemtype``); the older format (address ``@i:sensor`` with one key
 ``sensor``) is dropped. A sensor sits in the tree like any item, e.g. a heat
@@ -392,7 +392,7 @@ together.
 ::
 
     breakout_board_v01/BO-001                R1 = 9995.5 Ohm
-      +- heatflow_classic/HF-0815            slot hf0
+      +- hf_sensor/HF-0815            slot hf0
           +- ntc_sensor/HF-0815-ntc          slot ntc0  (internal NTC)
 
 **Sensor manager and Items window merged.** One store (metadata with item
@@ -420,9 +420,9 @@ that are put into the metadata the same way.)
 Steps:
 
 1. Clean up (done 2026-11-10): one type per sensor model in English
-   (``heatflow_classic``, ``tar_sensor``, ``base_sensor``); ``sensortype``
+   (``hf_sensor``, ``tar_sensor``, ``base_sensor``); ``sensortype``
    removed (the factory uses ``itemtype``); the older sensor format
-   dropped; ``date_produced`` optional; the duplicate ``hf_sensor`` of the
+   dropped; ``date_produced`` optional; the duplicate heat flux type of the
    norlog module removed; calibrations found by serial number and type;
    circuit parameters searched along the ancestors.
 2. Items window (done 2026-11-10): tabs "History", "Calibrations" and
@@ -447,7 +447,7 @@ Steps:
    lists; "apply" uses ``item_calibration.import_calibrations()`` (missing
    sensor items are created), loading from the metadata uses
    ``calibrations_from_metadata()``. Conversion of heat flux:
-   ``HeatflowClassicCalibration.raw2data()`` = voltage [mV] x
+   ``HfCalibration.raw2data()`` = voltage [mV] x
    ``calibration_HF_SI`` [W m-2 per mV]; the profile channel names its raw
    unit (``raw_unit: V``), converted into the input unit of the calibration
    by SI prefix (``item_calibration.unit_factor()``, V -> mV x1000).
@@ -623,9 +623,9 @@ Storage and exchange
   the inventory with a measurement campaign).
 * **Directory libraries** for collections that grow by adding (sensors,
   calibrations): a directory with one YAML file per address, at a path made
-  of its kind and names, e.g. ``items/heatflow_classic/0614.yaml``,
+  of its kind and names, e.g. ``items/hf_sensor/0614.yaml``,
   ``item_types/calypso_CMI1018.yaml``,
-  ``calibrations/heatflow_classic/0614/20210914T202100_<uuid8>.yaml``;
+  ``calibrations/hf_sensor/0614/20210914T202100_<uuid8>.yaml``;
   every file has the format of a YAML library. Marked by
   ``redvypr_library.yaml``. Saving writes only changed files and removes the
   files of addresses that are gone. A new entry is added by putting a file
@@ -743,8 +743,9 @@ Steps
    Assigning items from the address widget and the ADC tab follow with step 4.
 4. **Done** (``redvypr/items.py``: ``param_value()``, ``resolve_param()``;
    ``devices/norlog/norlog_items.py``: ``norlog_v02``, ``norlog_v021``,
-   ``breakout_board_v01`` with ``R1``, ``ntc_sensor``, ``hf_sensor`` (removed
-   2026-11-10: ``heatflow_classic`` of the sensor manager); profile
+   ``breakout_board_v01`` with ``R1``, ``ntc_sensor``, ``hf_sensor`` (the norlog
+   type of that name was removed 2026-11-10: the heat flux sensor of the
+   sensor manager has the name now); profile
    channels name the parameter, ``ChannelCal.scale_ref = ('board', 'R1')``).
    The norlog calibration is applied on the device, so the scale is a number
    there: the ADC tab shows the items of every channel (sensor, board) and
@@ -764,7 +765,7 @@ Steps
 6. **Done** (``sensor_and_calibration_definitions.py``,
    ``sensor_calibration_manager.py``, ``test/test_sensor_items.py``):
    ``BaseSensor`` derives from ``Item`` (itemtype = ``sensortype``, id =
-   ``sn``), ``BaseSensor``, ``HeatflowClassicSensor`` and ``TarSensor`` are
+   ``sn``), ``BaseSensor``, ``HfSensor`` and ``TarSensor`` are
    registered item types. The manager writes sensors with a serial number as
    items (``sensor_metadict()``) and reads items and sensors of older
    versions (``sensors_from_metadata()``); a sensor without serial number is
