@@ -295,3 +295,32 @@ def test_free_slots_in_the_type_filtered_list(widget):
     w.flat.setChecked(True)
     w.type_filter.setCurrentIndex(0)
     assert sorted(slot for _o, slot in slot_rows(w)) == ['hf0', 'hf1', 'ntc1']
+
+
+def test_search_filters_by_serial_number_and_name(widget):
+    w = widget
+    w.redvypr.add_item(items.Item(itemtype='hf_sensor', id='1158', name='FR-075', sn='1158'), valid_from=T0)
+    w.redvypr.add_item(items.Item(itemtype='ntc_sensor', id='1158-ntc', built_into='hf_sensor/1158'), valid_from=T0)
+    w.redvypr.add_item(items.Item(itemtype='hf_sensor', id='2200', sn='2200'), valid_from=T0)
+    w.refresh()
+    assert {r for _d, r in tree_refs(w)} >= {'hf_sensor/1158', 'hf_sensor/2200', 'ntc_sensor/0042'}
+    w.search.setText('1158')
+    w.refresh()                                           # (the timer does this after a pause)
+    assert sorted(r for _d, r in tree_refs(w)) == ['hf_sensor/1158', 'ntc_sensor/1158-ntc']
+    assert slot_rows(w) == {}                             # no slot rows while searching
+    w.search.setText('fr-075 hf')                         # several words, any case, name
+    w.refresh()
+    assert [r for _d, r in tree_refs(w)] == ['hf_sensor/1158']
+    w.search.setText('0042')                              # a match shows the items it sits on
+    w.refresh()
+    assert tree_refs(w) == [(0, 'norlog_v02/N-012'), (1, 'breakout_board_v01/BO-003'), (2, 'ntc_sensor/0042')]
+    w.search.setText('nothing like this')
+    w.refresh()
+    assert tree_refs(w) == []
+    w.search.setText('')
+    w.refresh()
+    assert len(tree_refs(w)) >= 6 and slot_rows(w)
+    # the type filter still lists all types while searching
+    w.search.setText('1158')
+    w.refresh()
+    assert w.type_filter.findData('norlog_v02') >= 0

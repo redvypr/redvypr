@@ -7,6 +7,8 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- Search field in the Items window: filters the items by serial number, name, description and the like
+  (several words: all must match); the items a match sits on stay in the tree.
 - Free slots in the tree of the Items window (grey rows below items whose type declares slots), "Assign
   sensor ..." (the items of the accepted types that are not mounted; parent = the owner, slot = the slot) and
   "Free slot". New general item field `built_into` (informational: the thing it belongs to, e.g. the heat flux

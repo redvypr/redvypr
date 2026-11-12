@@ -349,6 +349,17 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         top.addWidget(self.at_time)
         top.addWidget(self.use_now)
 
+        self.search = QtWidgets.QLineEdit()
+        self.search.setPlaceholderText('Search: serial number, name, ... (several words: all must match)')
+        self.search.setClearButtonEnabled(True)
+        self.search.setToolTip('Shows the items whose reference, serial number, name, description or '
+                               '"built into" contain the words (with the items they sit on)')
+        self._search_timer = QtCore.QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self.refresh)
+        self.search.textChanged.connect(lambda _t: self._search_timer.start())
+
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setHeaderLabels(['Item', 'SN', 'Name', 'Slot', 'Status'])
         self.tree.itemSelectionChanged.connect(self.selection_changed)
@@ -406,6 +417,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         llay = QtWidgets.QVBoxLayout(left)
         llay.setContentsMargins(0, 0, 0, 0)
         llay.addLayout(top)
+        llay.addWidget(self.search)
         llay.addWidget(self.tree, 1)
         llay.addLayout(buttons)
 
@@ -581,6 +593,9 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.type_filter.blockSignals(False)
         itemtype = self.type_filter.currentData()
 
+        needle = self.search_words()
+        if needle:
+            all_items = self.search_items(all_items, needle)
         by_ref = {i.ref: i for i in all_items}
         self.current_slot = None        # the rows are rebuilt: a selected free slot is no longer selected
         self.btn_assign.setEnabled(False)
@@ -613,7 +628,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             for item in sorted(all_items, key=lambda i: (i.itemtype, i.id)):
                 if itemtype is None or item.itemtype == itemtype:
                     self.tree.addTopLevelItem(node(item))
-        self._add_slot_rows(all_items, nodes)       # also in the flat list and with a type filter
+        if not needle:
+            self._add_slot_rows(all_items, nodes)   # also in the flat list and with a type filter
         self.tree.expandAll()
         for c in range(self.tree.columnCount()):
             self.tree.resizeColumnToContents(c)
@@ -627,6 +643,28 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             self.set_item(self.redvypr.get_item(self.current_ref, at_time=at))
         elif self.current_ref:
             self.show_history(self.current_ref)
+
+    def search_words(self) -> typing.List[str]:
+        return [w for w in self.search.text().lower().split() if w]
+
+    @staticmethod
+    def item_text(item) -> str:
+        """The text the search looks at."""
+        return ' '.join(str(x) for x in (item.ref, getattr(item, 'sn', None), item.name, item.description,
+                                         getattr(item, 'built_into', None), item.parent, item.slot) if x).lower()
+
+    def search_items(self, all_items, words):
+        """The items that contain all words, with the items they sit on (so the tree stays connected)."""
+        by_ref = {i.ref: i for i in all_items}
+        keep = set()
+        for item in all_items:
+            text = self.item_text(item)
+            if all(w in text for w in words):
+                ref = item.ref
+                while ref and ref in by_ref and ref not in keep:
+                    keep.add(ref)
+                    ref = by_ref[ref].parent
+        return [i for i in all_items if i.ref in keep]
 
     def _add_slot_rows(self, all_items, nodes):
         """Slots of the items whose type declares slots: free ones as grey rows below the item, the items in the
