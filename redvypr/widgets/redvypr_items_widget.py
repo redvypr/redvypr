@@ -629,8 +629,10 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             self.show_history(self.current_ref)
 
     def _add_slot_rows(self, all_items, nodes):
-        """Free slots of the items whose type declares slots: grey rows below the item."""
+        """Slots of the items whose type declares slots: free ones as grey rows below the item, the items in the
+        other slots as rows too if the list does not show them (type filter)."""
         grey = QtGui.QBrush(QtGui.QColor('gray'))
+        by_ref = {i.ref: i for i in all_items}
         for item in all_items:
             slots = getattr(ritems.get_item_type(item.itemtype), 'SLOTS', None) or {}
             if not slots or item.ref not in nodes:
@@ -638,6 +640,13 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             taken = ritems.slot_occupants(all_items, item.ref)
             for name, spec in slots.items():
                 if name in taken:
+                    # the item in the slot: a row of its own if the list does not show it (type filter)
+                    occ = by_ref.get(taken[name])
+                    if occ is not None and occ.ref not in nodes:
+                        row = QtWidgets.QTreeWidgetItem([occ.ref, str(getattr(occ, 'sn', None) or ''),
+                                                         occ.name or '', name, 'mounted'])
+                        row.setData(0, ROLE_REF, occ.ref)
+                        nodes[item.ref].addChild(row)
                     continue
                 spec = spec if isinstance(spec, dict) else {}
                 row = QtWidgets.QTreeWidgetItem([name, '', spec.get('label') or '', name, 'free'])

@@ -284,7 +284,13 @@ def test_free_button_follows_the_selection(widget):
 def test_free_slots_in_the_type_filtered_list(widget):
     w = widget
     w.type_filter.setCurrentIndex(w.type_filter.findData('breakout_board_v01'))
-    assert tree_refs(w) == [(0, 'breakout_board_v01/BO-003')]
+    # the sensor in ntc0 is not of the filtered type: a row of the board shows it
+    assert tree_refs(w) == [(0, 'breakout_board_v01/BO-003'), (1, 'ntc_sensor/0042')]
+    row = next(w.tree.topLevelItem(0).child(i) for i in range(w.tree.topLevelItem(0).childCount())
+               if w.tree.topLevelItem(0).child(i).text(4) == 'mounted')
+    assert row.text(3) == 'ntc0' and row.text(4) == 'mounted' and row.data(0, iw.ROLE_SLOT) is None
+    w.tree.setCurrentItem(row)
+    assert w.current_ref == 'ntc_sensor/0042' and w.btn_free.isEnabled()
     assert sorted(slot for _o, slot in slot_rows(w)) == ['hf0', 'hf1', 'ntc1']
     w.flat.setChecked(True)
     w.type_filter.setCurrentIndex(0)
