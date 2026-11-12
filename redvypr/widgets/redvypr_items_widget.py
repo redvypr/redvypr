@@ -22,6 +22,7 @@ from redvypr.widgets.load_progress import LoadProgress
 logger = logging.getLogger('redvypr.widgets.items')
 
 ROLE_REF = QtCore.Qt.ItemDataRole.UserRole + 1
+ROLE_SLOT = QtCore.Qt.ItemDataRole.UserRole + 2     # free slot row of the tree: (reference of the owner, slot)
 UTC = datetime.timezone.utc
 # Fields not edited in the form (address, bookkeeping)
 FORM_SKIP = ('itemtype', 'id', 'type_revision', 'attachments')
@@ -213,6 +214,98 @@ class MoveItemDialog(QtWidgets.QDialog):
         return self._parent(), (slot or None), _pydt(self.valid_from.dateTime())
 
 
+class AssignSensorDialog(QtWidgets.QDialog):
+    """Chooses the item that is mounted in a slot: the items of the types the slot accepts."""
+
+    def __init__(self, parent, owner_ref: str, slot: str, spec: dict, all_items: typing.List[ritems.Item]):
+        super().__init__(parent)
+        self.owner_ref, self.slot_name = owner_ref, slot
+        spec = spec if isinstance(spec, dict) else {}
+        self.accepts = list(spec.get('accepts') or [])
+        self.items = {i.ref: i for i in all_items}
+        self.setWindowTitle(f'Assign to {slot}')
+        label = spec.get('label') or ''
+        head = QtWidgets.QLabel(f'Slot <b>{slot}</b>' + (f' ({label})' if label else '') + f' of {owner_ref}'
+                                + (f'<br>accepts: {", ".join(self.accepts)}' if self.accepts else ''))
+        self.search = QtWidgets.QLineEdit()
+        self.search.setPlaceholderText('filter by name, serial number, ...')
+        self.show_mounted = QtWidgets.QCheckBox('also items that are mounted already')
+        self.show_mounted.setToolTip('An item that sits somewhere (parent) is moved here')
+        self.list = QtWidgets.QListWidget()
+        self.valid_from = QtWidgets.QDateTimeEdit(_qdt(now_utc()))
+        self.valid_from.setDisplayFormat('yyyy-MM-dd HH:mm:ss UTC')
+        self.valid_from.setTimeZone(QtCore.QTimeZone.utc())
+        self.change = QtWidgets.QLabel('')
+        self.change.setWordWrap(True)
+        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                                  QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.addWidget(head)
+        lay.addWidget(self.search)
+        lay.addWidget(self.show_mounted)
+        lay.addWidget(self.list, 1)
+        form = QtWidgets.QFormLayout()
+        form.addRow('From', self.valid_from)
+        lay.addLayout(form)
+        lay.addWidget(self.change)
+        lay.addWidget(self.buttons)
+        self.search.textChanged.connect(lambda _t: self.fill())
+        self.show_mounted.toggled.connect(lambda _on: self.fill())
+        self.list.currentItemChanged.connect(lambda _a, _b: self.update_change())
+        self.list.itemDoubleClicked.connect(lambda _i: self.accept())
+        self.fill()
+        self.resize(560, 520)
+
+    def candidates(self) -> typing.List[ritems.Item]:
+        out = []
+        for it in self.items.values():
+            if it.ref == self.owner_ref or (self.accepts and it.itemtype not in self.accepts):
+                continue
+            if it.parent and not self.show_mounted.isChecked():
+                continue
+            out.append(it)
+        return sorted(out, key=lambda i: (i.itemtype, i.id))
+
+    def fill(self):
+        needle = self.search.text().strip().lower()
+        self.list.clear()
+        for it in self.candidates():
+            text = item_label(it)
+            if getattr(it, 'built_into', None):
+                text += f'  - belongs to {it.built_into}'
+            if it.parent:
+                text += f'  - sits on {it.parent}' + (f' / {it.slot}' if it.slot else '')
+            if needle and needle not in text.lower():
+                continue
+            w = QtWidgets.QListWidgetItem(text)
+            w.setData(QtCore.Qt.ItemDataRole.UserRole, it.ref)
+            self.list.addItem(w)
+        self.update_change()
+
+    def selected_ref(self) -> typing.Optional[str]:
+        w = self.list.currentItem()
+        return w.data(QtCore.Qt.ItemDataRole.UserRole) if w is not None else None
+
+    def update_change(self):
+        ref = self.selected_ref()
+        it = self.items.get(ref) if ref else None
+        ok = self.buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Ok)
+        ok.setEnabled(it is not None)
+        if it is None:
+            self.change.setText('no item selected' if self.list.count() else
+                                'no item of the accepted types that is not mounted: "also items that are mounted '
+                                'already" lists the others')
+            return
+        self.change.setText(f'{ref}: parent {it.parent or "-"} -> {self.owner_ref}, '
+                            f'slot {it.slot or "-"} -> {self.slot_name}')
+
+    def values(self):
+        """(reference of the item, valid from)."""
+        return self.selected_ref(), _pydt(self.valid_from.dateTime())
+
+
 class RedvyprItemsWidget(QtWidgets.QWidget):
     """
     The items of a redvypr instance. Left: tree by parent at a chosen time
@@ -263,6 +356,14 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.btn_new = QtWidgets.QPushButton('New')
         self.btn_copy = QtWidgets.QPushButton('Copy')
         self.btn_move = QtWidgets.QPushButton('Move to ...')
+        self.btn_assign = QtWidgets.QPushButton('Assign sensor ...')
+        self.btn_assign.setToolTip('Select a free slot (grey row below a board): chooses the item that is mounted '
+                                   'there (parent and slot are set)')
+        self.btn_assign.setEnabled(False)
+        self.btn_free = QtWidgets.QPushButton('Free slot')
+        self.btn_free.setToolTip('Takes the selected item out of its slot (parent and slot are cleared)')
+        self.btn_free.setEnabled(False)
+        self.current_slot = None        # (owner reference, slot) of the selected free slot row
         self.btn_delete = QtWidgets.QPushButton('Delete ...')
         self.btn_delete.setToolTip('Remove the selected item with its whole history (for mistakes; an item '
                                    'that is no longer used gets status "retired" instead)')
@@ -287,6 +388,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.btn_new.clicked.connect(lambda: self.new_item())
         self.btn_copy.clicked.connect(lambda: self.new_item(copy=True))
         self.btn_move.clicked.connect(self.move_item)
+        self.btn_assign.clicked.connect(lambda: self.assign_sensor())
+        self.btn_free.clicked.connect(lambda: self.free_slot())
         self.btn_delete.clicked.connect(lambda: self.delete_item())
         self.btn_load.clicked.connect(self.load_library)
         self.btn_save_lib.clicked.connect(lambda: self.save_libraries())
@@ -294,6 +397,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.btn_refresh.clicked.connect(self.refresh)
         buttons = QtWidgets.QGridLayout()
         for i, b in enumerate((self.btn_new, self.btn_copy, self.btn_move, self.btn_delete,
+                               self.btn_assign, self.btn_free,
                                self.btn_load, self.btn_load_dir, self.btn_save_lib, self.btn_save_as,
                                self.btn_refresh, self.btn_types, self.btn_git)):
             buttons.addWidget(b, i // 4, i % 4)
@@ -478,6 +582,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         itemtype = self.type_filter.currentData()
 
         by_ref = {i.ref: i for i in all_items}
+        self.current_slot = None        # the rows are rebuilt: a selected free slot is no longer selected
+        self.btn_assign.setEnabled(False)
         self.tree.blockSignals(True)
         self.tree.clear()
         nodes = {}
@@ -507,6 +613,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             for item in sorted(all_items, key=lambda i: (i.itemtype, i.id)):
                 if itemtype is None or item.itemtype == itemtype:
                     self.tree.addTopLevelItem(node(item))
+        if itemtype is None and not self.flat.isChecked():
+            self._add_slot_rows(all_items, nodes)
         self.tree.expandAll()
         for c in range(self.tree.columnCount()):
             self.tree.resizeColumnToContents(c)
@@ -521,10 +629,38 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         elif self.current_ref:
             self.show_history(self.current_ref)
 
+    def _add_slot_rows(self, all_items, nodes):
+        """Free slots of the items whose type declares slots: grey rows below the item."""
+        grey = QtGui.QBrush(QtGui.QColor('gray'))
+        for item in all_items:
+            slots = getattr(ritems.get_item_type(item.itemtype), 'SLOTS', None) or {}
+            if not slots or item.ref not in nodes:
+                continue
+            taken = ritems.slot_occupants(all_items, item.ref)
+            for name, spec in slots.items():
+                if name in taken:
+                    continue
+                spec = spec if isinstance(spec, dict) else {}
+                row = QtWidgets.QTreeWidgetItem([name, '', spec.get('label') or '', name, 'free'])
+                row.setData(0, ROLE_SLOT, (item.ref, name))
+                font = row.font(0)
+                font.setItalic(True)
+                for c in range(row.columnCount()):
+                    row.setForeground(c, grey)
+                    row.setFont(c, font)
+                nodes[item.ref].addChild(row)
+
+    def _update_slot_buttons(self, item=None):
+        self.btn_assign.setEnabled(self.current_slot is not None)
+        self.btn_free.setEnabled(item is not None and bool(item.parent or item.slot))
+
     def selection_changed(self):
         w = self.tree.currentItem()
         ref = w.data(0, ROLE_REF) if w is not None else None
-        self.set_item(self.redvypr.get_item(ref, at_time=self.time()) if ref else None)
+        self.current_slot = w.data(0, ROLE_SLOT) if w is not None else None
+        item = self.redvypr.get_item(ref, at_time=self.time()) if ref else None
+        self.set_item(item)
+        self._update_slot_buttons(item)
         if self.types_widget is not None:
             self.types_widget.set_item(self.redvypr.get_item(ref, at_time=self.time()) if ref else None)
 
@@ -578,6 +714,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.form_fields = {}
         self.current_ref = item.ref if item is not None else None
         self._form_time = self.time()
+        self._update_slot_buttons(item)
         enabled = item is not None
         for w in (self.btn_save, self.btn_copy, self.btn_move, self.btn_add_field, self.new_key, self.valid_from):
             w.setEnabled(enabled)
@@ -993,6 +1130,44 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             return False
         parent_ref, slot, valid_from = dlg.values()
         return self.move(item, parent_ref, slot, valid_from)
+
+    def assign_sensor(self, owner_ref=None, slot=None, item_ref=None, valid_from=None):
+        """
+        Mounts an item in a slot: parent = the owner (board), slot = the slot. Default: the selected free
+        slot; the dialog chooses the item (item_ref: without the dialog). Returns True if it was done.
+        """
+        if owner_ref is None or slot is None:
+            if self.current_slot is None:
+                self.set_status('select a free slot (grey row below a board) first', error=True)
+                return False
+            owner_ref, slot = self.current_slot
+        all_items = self.redvypr.list_items(at_time=self.time())
+        owner = next((i for i in all_items if i.ref == owner_ref), None)
+        if owner is None:
+            self.set_status(f'{owner_ref} not found', error=True)
+            return False
+        spec = (getattr(ritems.get_item_type(owner.itemtype), 'SLOTS', None) or {}).get(slot) or {}
+        if item_ref is None:
+            dlg = AssignSensorDialog(self, owner_ref, slot, spec, all_items)
+            if not dlg.exec():
+                return False
+            item_ref, valid_from = dlg.values()
+            if not item_ref:
+                return False
+        item = self.redvypr.get_item(item_ref, at_time=self.time())
+        if item is None:
+            self.set_status(f'{item_ref} not found', error=True)
+            return False
+        return self.move(item, owner_ref, slot, valid_from if valid_from is not None else now_utc())
+
+    def free_slot(self, item_ref=None, valid_from=None):
+        """Takes an item (default the selected one) out of its slot: parent and slot are cleared."""
+        ref = item_ref or self.current_ref
+        item = self.redvypr.get_item(ref, at_time=self.time()) if ref else None
+        if item is None:
+            self.set_status('select an item first', error=True)
+            return False
+        return self.move(item, None, None, valid_from if valid_from is not None else now_utc())
 
     def move(self, item, parent_ref, slot, valid_from):
         try:

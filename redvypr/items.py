@@ -84,6 +84,9 @@ class Item(pydantic.BaseModel):
     order: typing.Optional[dict] = pydantic.Field(default=None, description='Supplier, number, date, ...')
     parent: typing.Optional[str] = pydantic.Field(default=None, description='Item reference <itemtype>/<id>')
     slot: typing.Optional[str] = pydantic.Field(default=None, description='Where on the parent, e.g. a channel name')
+    built_into: typing.Optional[str] = pydantic.Field(
+        default=None, description='Item reference of the thing it belongs to (e.g. the internal NTC of a heat flux '
+                                  'sensor). Informational: where it sits is parent and slot')
     deviceid: typing.Optional[str] = pydantic.Field(default=None, description='Data source: deviceid of its packets')
     sensorid: typing.Optional[str] = pydantic.Field(default=None, description='Data source: sensorid of its packets')
     device: typing.Optional[str] = pydantic.Field(default=None, description='Data source: device name of its packets')
@@ -174,6 +177,23 @@ def register_builtin_item(item: Item) -> Item:
 def get_item_type(itemtype: str) -> typing.Type[Item]:
     """The model of an item type; the generic Item for unknown types."""
     return ITEM_TYPES.get(itemtype, Item)
+
+
+def slot_occupants(all_items: typing.Iterable['Item'], owner_ref: str) -> typing.Dict[str, str]:
+    """{slot: reference of the item} of the items below owner_ref (children and their children) that sit in a slot."""
+    by_ref = {it.ref: it for it in all_items}
+    out = {}
+    for it in by_ref.values():
+        if not it.slot or it.ref == owner_ref:
+            continue
+        ref, seen = it.parent, {it.ref}
+        while ref and ref in by_ref and ref not in seen:
+            if ref == owner_ref:
+                out.setdefault(it.slot, it.ref)
+                break
+            seen.add(ref)
+            ref = by_ref[ref].parent
+    return out
 
 
 def slot_options(all_items: typing.Iterable['Item'], parent_ref: typing.Optional[str], itemtype: str,

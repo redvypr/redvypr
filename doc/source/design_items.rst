@@ -438,22 +438,31 @@ history), not a field of the item (a nominal value of the data sheet may
 be a field of the type).
 
 **Sensors with an internal sensor**, e.g. a heat flux sensor with an
-internal NTC: the internal sensor is an item of its own, child of the outer
-sensor (``parent`` = the heat flux sensor, ``slot`` = its channel, e.g.
-``ntc0``); without an own serial number its id is derived
-(``HF-0815-ntc``). It has its own calibration and moves with the outer
-sensor. A parameter of the measuring circuit (``scale_ref``, e.g. ``R1``)
-is searched along the ancestors of the sensor (NTC -> heat flux sensor ->
-breakout board): the first item having it is used (``get_items()`` returns
-the ``ancestors``, ``items.param_from()``). Later a type could name its
-parts (``parts: {ntc: ntc_sensor}``) so that the Items window creates them
-together.
+internal NTC: the internal sensor is an item of its own
+(``ntc_sensor/HF-0815-ntc``; without an own serial number its id is
+derived). It has its own calibration. It is **not** a child of the outer
+sensor: the field ``built_into`` (= ``hf_sensor/HF-0815``) says where it
+belongs to (informational), ``parent`` and ``slot`` say where it is
+mounted, like for every sensor: at the slot ``ntc0`` of the breakout board
+(Items window: select the free slot -> "Assign sensor ...", then only items of
+the accepted types that are not mounted are offered). A parameter of the
+measuring circuit (``scale_ref``, e.g. ``R1``) is searched along the
+ancestors of the sensor (NTC -> breakout board): the first item having it is
+used (``get_items()`` returns the ``ancestors``, ``items.param_from()``).
+Later a type could name its parts (``parts: {ntc: ntc_sensor}``) so that the
+Items window offers to mount them together.
 
 ::
 
     breakout_board_v01/BO-001                R1 = 9995.5 Ohm
       +- hf_sensor/HF-0815            slot hf0
-          +- ntc_sensor/HF-0815-ntc          slot ntc0  (internal NTC)
+      +- ntc_sensor/HF-0815-ntc       slot ntc0  (internal NTC, built_into hf_sensor/HF-0815)
+
+**Slots in the Items window.** Items whose type declares slots (``slots`` of the
+type, e.g. the breakout board: ``hf0``, ``ntc0``, ``hf1``, ``ntc1``) show their
+free slots as grey rows in the tree. A selected free slot: "Assign sensor ..."
+(parent = the owner, slot = the slot, valid from a time); "Free slot" takes the
+selected item out of its slot (parent and slot are cleared).
 
 **Sensor manager and Items window merged.** One store (metadata with item
 libraries), several views:

@@ -36,6 +36,8 @@ def tree_refs(w):
     out = []
 
     def walk(node, depth):
+        if node.data(0, iw.ROLE_SLOT) is not None:      # free slot rows are no items
+            return
         out.append((depth, node.text(0)))
         for i in range(node.childCount()):
             walk(node.child(i), depth + 1)
@@ -207,3 +209,73 @@ def test_form_of_a_data_type(widget):
     finally:
         items.ITEM_TYPES.clear()
         items.ITEM_TYPES.update(s_before)
+
+
+def slot_rows(w):
+    """{(owner, slot): row} of the free slot rows of the tree."""
+    out = {}
+
+    def walk(node):
+        key = node.data(0, iw.ROLE_SLOT)
+        if key is not None:
+            out[tuple(key)] = node
+        for i in range(node.childCount()):
+            walk(node.child(i))
+    for i in range(w.tree.topLevelItemCount()):
+        walk(w.tree.topLevelItem(i))
+    return out
+
+
+def test_free_slots_assign_and_free(widget):
+    w = widget
+    owner = 'breakout_board_v01/BO-003'
+    # ntc 0042 sits in ntc0 (below the board): the other slots are free rows below the board
+    rows = slot_rows(w)
+    assert sorted(slot for _o, slot in rows) == ['hf0', 'hf1', 'ntc1']
+    assert all(o == owner for o, _s in rows) and rows[(owner, 'hf0')].text(4) == 'free'
+    assert not w.btn_assign.isEnabled()
+    w.tree.setCurrentItem(rows[(owner, 'ntc1')])
+    assert w.btn_assign.isEnabled() and w.current_slot == (owner, 'ntc1') and w.current_ref is None
+    # a sensor with a built_into link, a sensor in the store, one mounted elsewhere
+    w.redvypr.add_item(items.Item(itemtype='ntc_sensor', id='0044', built_into='hf_sensor/1158'), valid_from=T0)
+    w.redvypr.add_item(items.Item(itemtype='hf_sensor', id='1158'), valid_from=T0)
+    w.refresh()
+    # the dialog lists the unmounted items of the accepted types only
+    all_items = w.redvypr.list_items()
+    spec = items.get_item_type('breakout_board_v01').SLOTS['ntc1']
+    dlg = iw.AssignSensorDialog(None, owner, 'ntc1', spec, all_items)
+    refs = [dlg.list.item(i).data(iw.QtCore.Qt.ItemDataRole.UserRole) for i in range(dlg.list.count())]
+    assert refs == ['ntc_sensor/0044']                    # not the mounted 0042, not the hf sensor
+    assert 'belongs to hf_sensor/1158' in dlg.list.item(0).text()
+    dlg.show_mounted.setChecked(True)
+    refs = [dlg.list.item(i).data(iw.QtCore.Qt.ItemDataRole.UserRole) for i in range(dlg.list.count())]
+    assert refs == ['ntc_sensor/0042', 'ntc_sensor/0044']
+    dlg.search.setText('0042')
+    assert dlg.list.count() == 1 and 'sits on breakout_board_v01/BO-003 / ntc0' in dlg.list.item(0).text()
+    dlg.search.setText('')
+    dlg.list.setCurrentRow(1)
+    assert dlg.values()[0] == 'ntc_sensor/0044' and 'ntc_sensor/0044: parent - -> ' + owner in dlg.change.text()
+    # assign: parent = the board, slot = the slot (the rows were rebuilt by the refresh)
+    w.tree.setCurrentItem(slot_rows(w)[(owner, 'ntc1')])
+    assert w.current_slot == (owner, 'ntc1')
+    assert w.assign_sensor(item_ref='ntc_sensor/0044') is True
+    ntc = w.redvypr.get_item('ntc_sensor/0044')
+    assert (ntc.parent, ntc.slot, ntc.built_into) == (owner, 'ntc1', 'hf_sensor/1158')    # origin stays
+    assert sorted(slot for _o, slot in slot_rows(w)) == ['hf0', 'hf1']
+    # free the slot again: parent and slot are cleared, the origin stays
+    w.free_slot('ntc_sensor/0044')
+    ntc = w.redvypr.get_item('ntc_sensor/0044')
+    assert (ntc.parent, ntc.slot, ntc.built_into) == (None, None, 'hf_sensor/1158')
+    assert sorted(slot for _o, slot in slot_rows(w)) == ['hf0', 'hf1', 'ntc1']
+    # nothing selected / unknown owner
+    w.current_slot = None
+    assert w.assign_sensor() is False and 'free slot' in w.status.text()
+    assert w.assign_sensor('norlog_v02/nothing', 'x') is False
+
+
+def test_free_button_follows_the_selection(widget):
+    w = widget
+    select(w, 'ntc_sensor/0042')
+    assert w.btn_free.isEnabled()
+    select(w, 'norlog_v02/N-012')
+    assert not w.btn_free.isEnabled()

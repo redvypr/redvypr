@@ -7,6 +7,11 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- Free slots in the tree of the Items window (grey rows below items whose type declares slots), "Assign
+  sensor ..." (the items of the accepted types that are not mounted; parent = the owner, slot = the slot) and
+  "Free slot". New general item field `built_into` (informational: the thing it belongs to, e.g. the heat flux
+  sensor of an internal NTC); the internal NTC is no child of its sensor any more, it is mounted at its own
+  slot.
 - Calibration assignments: which data a calibration converts is a redvypr address (filter) in the
   configuration of the device (`generic_sensor`: `calibration_assignments`: filter, sn or uuid,
   type, result, raw_unit), the calibration comes from the metadata libraries (sn: the one valid at
