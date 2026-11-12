@@ -52,7 +52,7 @@ import redvypr.items as ritems
 logger = logging.getLogger('redvypr.item_types')
 
 ITEMTYPE_PACKETID = 'itemtype'
-DEFINITION_KEYS = ('description', 'base', 'revision', 'fields', 'defaults', 'renamed')
+DEFINITION_KEYS = ('description', 'base', 'revision', 'fields', 'defaults', 'renamed', 'slots')
 
 KINDS = {
     'str': str,
@@ -100,6 +100,9 @@ class TypeDefinition(pydantic.BaseModel):
     fields: typing.Dict[str, FieldDefinition] = pydantic.Field(default_factory=dict)
     defaults: typing.Dict[str, typing.Any] = pydantic.Field(default_factory=dict)
     renamed: typing.Dict[str, str] = pydantic.Field(default_factory=dict, description='old field -> new field')
+    slots: typing.Dict[str, typing.Dict[str, typing.Any]] = pydantic.Field(
+        default_factory=dict, description='slot -> {accepts: [item types], label}: suggestions for the slot of '
+                                          'items mounted on this type')
 
 
 # --- addresses ---------------------------------------------------------------------
@@ -132,7 +135,7 @@ def definition_entries(defn: TypeDefinition, valid_from=None) -> dict:
     data = defn.model_dump(exclude_none=True)
     data.pop('name')
     data['fields'] = {k: v.model_dump(exclude_none=True) for k, v in defn.fields.items()}
-    for k in ('defaults', 'renamed', 'fields'):
+    for k in ('defaults', 'renamed', 'fields', 'slots'):
         if not data.get(k):
             data.pop(k, None)
     address = itemtype_address(defn.name)
@@ -291,6 +294,8 @@ def build_model(defn: TypeDefinition, base: typing.Type[ritems.Item]) -> typing.
     model.REVISION = revision
     model.ORIGIN = 'data'
     model.DEFINITION = defn
+    # the slots of the base stay, the definition adds to them and overrides slots of the same name
+    model.SLOTS = dict(getattr(base, 'SLOTS', None) or {}, **(defn.slots or {}))
     model.__doc__ = namespace['__doc__']
     model.migrate = classmethod(migrate)
     return model

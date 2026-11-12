@@ -127,8 +127,13 @@ def item_label(item: ritems.Item) -> str:
 class MoveItemDialog(QtWidgets.QDialog):
     """New parent and slot of an item from a time on."""
 
-    def __init__(self, parent, item: ritems.Item, candidates: typing.List[typing.Union[str, ritems.Item]]):
+    def __init__(self, parent, item: ritems.Item, candidates: typing.List[typing.Union[str, ritems.Item]],
+                 all_items: typing.Optional[typing.List[ritems.Item]] = None):
+        """all_items: the items at the time of interest, for the slots suggested by the parent."""
         super().__init__(parent)
+        self._item = item
+        self._all_items = list(all_items) if all_items is not None else [c for c in candidates
+                                                                         if not isinstance(c, str)]
         self.setWindowTitle(f'Move {item.ref}')
         lay = QtWidgets.QFormLayout(self)
         self.parent_ref = QtWidgets.QComboBox()
@@ -140,13 +145,24 @@ class MoveItemDialog(QtWidgets.QDialog):
                 self.parent_ref.addItem(ref if isinstance(cand, str) else item_label(cand), ref)
         i = self.parent_ref.findData(item.parent or '')
         self.parent_ref.setCurrentIndex(max(i, 0))
-        self.slot = QtWidgets.QLineEdit(item.slot or '')
-        self.slot.setPlaceholderText('e.g. the channel name (ntc0) or a terminal')
+        self.slot = QtWidgets.QComboBox()
+        self.slot.setEditable(True)
+        self.slot.lineEdit().setPlaceholderText('e.g. the channel name (ntc0) or a terminal')
+        self.slot.setToolTip('Suggestions: the slots of the parent (and of its parents) that accept this item '
+                             'type; other names can be typed')
+        self.slot_hint = QtWidgets.QLabel('')
+        self.slot_hint.setWordWrap(True)
+        self._initial_slot = item.slot or ''
+        self.parent_ref.currentIndexChanged.connect(lambda _i: self.update_slots())
+        self.slot.currentIndexChanged.connect(self._slot_chosen)
+        self.slot.editTextChanged.connect(lambda _t: self._slot_hint())
+        self.update_slots(keep=self._initial_slot)
         self.valid_from = QtWidgets.QDateTimeEdit(_qdt(now_utc()))
         self.valid_from.setDisplayFormat('yyyy-MM-dd HH:mm:ss UTC')
         self.valid_from.setTimeZone(QtCore.QTimeZone.utc())
         lay.addRow('Parent', self.parent_ref)
         lay.addRow('Slot', self.slot)
+        lay.addRow('', self.slot_hint)
         lay.addRow('From', self.valid_from)
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
                                              QtWidgets.QDialogButtonBox.StandardButton.Cancel)
@@ -154,14 +170,47 @@ class MoveItemDialog(QtWidgets.QDialog):
         buttons.rejected.connect(self.reject)
         lay.addRow(buttons)
 
-    def values(self):
+    def _parent(self) -> typing.Optional[str]:
         text = self.parent_ref.currentText().strip()
         i = self.parent_ref.currentIndex()
         # a chosen entry gives its reference (the text shows sn and name), else the typed reference
         ref = self.parent_ref.itemData(i) if i >= 0 and text == self.parent_ref.itemText(i) else text
-        ref = None if ref in ('', '(none)', None) else ref
-        slot = self.slot.text().strip() or None
-        return ref, slot, _pydt(self.valid_from.dateTime())
+        return None if ref in ('', '(none)', None) else ref
+
+    def update_slots(self, keep: typing.Optional[str] = None):
+        """Fills the slot suggestions from the parent; the typed/current slot is kept (keep: set it)."""
+        current = self.slot.currentText().strip() if keep is None else keep
+        options = ritems.slot_options(self._all_items, self._parent(), self._item.itemtype,
+                                      exclude_ref=self._item.ref)
+        self.slot.blockSignals(True)
+        self.slot.clear()
+        self.slot.addItem('', '')
+        for o in options:
+            text = o['slot'] + (f"  ({o['label']})" if o['label'] else '')
+            if o['occupied_by']:
+                text += f"  - occupied by {o['occupied_by']}"
+            self.slot.addItem(text, o['slot'])
+        self.slot.setEditText(current)
+        self.slot.blockSignals(False)
+        self._options = {o['slot']: o for o in options}
+        self._slot_hint()
+
+    def _slot_chosen(self, i):
+        data = self.slot.itemData(i)
+        if data:
+            self.slot.setEditText(data)
+        self._slot_hint()
+
+    def _slot_hint(self):
+        o = self._options.get(self.slot.currentText().strip())
+        self.slot_hint.setText(f"Slot already used by {o['occupied_by']} (it is not removed)"
+                               if o and o['occupied_by'] else '')
+
+    def values(self):
+        text = self.slot.currentText().strip()
+        i = self.slot.currentIndex()
+        slot = self.slot.itemData(i) if i >= 0 and text == self.slot.itemText(i) else text
+        return self._parent(), (slot or None), _pydt(self.valid_from.dateTime())
 
 
 class RedvyprItemsWidget(QtWidgets.QWidget):
@@ -309,8 +358,12 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
                                        'serial number takes that of the selected item; missing sensor items '
                                        'are created. "Save libraries" stores them (calibrations.yaml).')
         self.btn_remove_cal = QtWidgets.QPushButton('Remove calibration')
+        self.btn_apply_cal = QtWidgets.QPushButton('Apply to datastream ...')
+        self.btn_apply_cal.setToolTip('Which data this calibration converts: adds a calibration assignment (filter = '
+                                      'address of the raw data) to the configuration of a generic_sensor device')
         self.btn_import_cal.clicked.connect(lambda: self.import_calibration())
         self.btn_remove_cal.clicked.connect(lambda: self.remove_calibration())
+        self.btn_apply_cal.clicked.connect(lambda: self.apply_calibration_to_stream())
         cal_tab = QtWidgets.QWidget()
         cl = QtWidgets.QVBoxLayout(cal_tab)
         cl.setContentsMargins(0, 0, 0, 0)
@@ -318,6 +371,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         cb = QtWidgets.QHBoxLayout()
         cb.addWidget(self.btn_import_cal)
         cb.addWidget(self.btn_remove_cal)
+        cb.addWidget(self.btn_apply_cal)
         cb.addStretch(1)
         cl.addLayout(cb)
 
@@ -677,6 +731,58 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             self.set_item(self.redvypr.get_item(item.ref, at_time=self.time()))
         return report
 
+    def assignment_devices(self) -> list:
+        """The devices of this instance that apply calibration assignments (generic_sensor)."""
+        out = []
+        for devicedict in getattr(self.redvypr, 'devices', []) or []:
+            device = devicedict.get('device') if isinstance(devicedict, dict) else None
+            if device is not None and hasattr(device, 'assignments_to_metadata'):
+                out.append(device)
+        return out
+
+    def apply_calibration_to_stream(self, device=None, assignment=None):
+        """
+        Adds a calibration assignment for the selected calibration (else its sensor: sn and type of the
+        item) to a device (the only one, else asked); the dialog asks for the datastream. assignment: add
+        it without the dialog. Returns the assignment, None if cancelled.
+        """
+        from redvypr.devices.sensors.calibration import item_calibration as ic
+        from redvypr.devices.sensors.calibration.calibration_assignments_widget import AssignmentDialog
+        item = self.redvypr.get_item(self.current_ref, at_time=self.time()) if self.current_ref else None
+        if item is None:
+            self.set_status('select an item first', error=True)
+            return None
+        if device is None:
+            devices = self.assignment_devices()
+            if not devices:
+                self.set_status('no device that applies calibrations (generic_sensor) in this instance', error=True)
+                return None
+            device = devices[0]
+            if len(devices) > 1:
+                names = [d.name for d in devices]
+                name, ok = QtWidgets.QInputDialog.getItem(self, 'Apply to datastream', 'Device', names, 0, False)
+                if not ok:
+                    return None
+                device = devices[names.index(name)]
+        if assignment is None:
+            row = self.calibrations.currentRow()
+            cell = self.calibrations.item(row, 0) if row >= 0 else None
+            uuid = cell.data(QtCore.Qt.ItemDataRole.UserRole) if cell is not None else None
+            # a selected calibration: exactly that one, else the calibration of the sensor valid at the data
+            preset = {'uuid': uuid} if uuid else {'sn': ic.item_sn(item), 'type': item.itemtype}
+            dlg = AssignmentDialog(self.redvypr, self, preset=preset)
+            if not dlg.exec():
+                return None
+            assignment = dlg.assignment()
+        items = [a for a in device.custom_config.calibration_assignments if a.address != assignment.address]
+        device.custom_config.calibration_assignments = items + [assignment]
+        device.update_subscriptions()
+        if hasattr(device, 'config_changed_signal'):
+            device.config_changed_signal.emit()
+        self.set_status(f'assignment added to {device.name}: {assignment.address}. In the device: '
+                        '"Calibration assignments" -> "Save to metadata".')
+        return assignment
+
     def remove_calibration(self, calibration_uuid=None, confirm=None):
         from redvypr.devices.sensors.calibration import item_calibration as ic
         if calibration_uuid is None:
@@ -881,7 +987,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         item = self.redvypr.get_item(self.current_ref, at_time=self.time()) if self.current_ref else None
         if item is None:
             return False
-        dlg = MoveItemDialog(self, item, self.redvypr.list_items(at_time=self.time()))
+        all_items = self.redvypr.list_items(at_time=self.time())
+        dlg = MoveItemDialog(self, item, all_items, all_items=all_items)
         if not dlg.exec():
             return False
         parent_ref, slot, valid_from = dlg.values()

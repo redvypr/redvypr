@@ -353,6 +353,7 @@ class RedvyprItemTypesWidget(QtWidgets.QWidget):
             self._add_pair(self.defaults, k, _value_to_text(v))
         for k, v in defn.renamed.items():
             self._add_pair(self.renamed, k, v)
+        self._slots = dict(defn.slots)      # no form of their own yet: kept when saving (edit in the YAML)
         py = ritem_types._python_type(defn.name)
         self.base.setEnabled(py is None)
         inherited_cls = py or (ritems.ITEM_TYPES.get(defn.base) if defn.base else None) or ritems.Item
@@ -406,7 +407,8 @@ class RedvyprItemTypesWidget(QtWidgets.QWidget):
             base = None
         return ritem_types.TypeDefinition(
             name=name, description=self.description.toPlainText().strip() or None, base=base,
-            revision=self.revision.value(), fields=fields, defaults=defaults, renamed=renamed)
+            revision=self.revision.value(), fields=fields, defaults=defaults, renamed=renamed,
+            slots=dict(getattr(self, '_slots', None) or {}))
 
     # --- actions ---
     def new_type(self):

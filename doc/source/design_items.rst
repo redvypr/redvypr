@@ -122,6 +122,18 @@ all inventories). The short form is accepted when loading::
           heading_offset: {kind: quantity, unit: deg, description: Mounting offset to north}
           interface:      {kind: str, choices: [NMEA0183, RS485]}
         renamed: {}                  # old -> new field, migration to this revision
+        slots:                       # offered to the items mounted on this type
+          port_a: {accepts: [ntc_sensor], label: 'NTC at port A'}
+
+**Slots:** a type may declare the slots it offers (``slots``, in Python the
+class attribute ``SLOTS``; the definition of a Python type adds to them):
+``slot: {accepts: [item types], label: text}``. They are only suggestions for
+the ``slot`` of an item, which stays a free string. The Move dialog of the
+Items window offers the slots of the parent type and of its ancestors (nearest
+first), filtered by ``accepts`` (``items.slot_options()``) and marks slots that
+already hold an item below the declaring item. An NTC that is a child of its
+heat flux sensor therefore gets the channel slots (``ntc0``, ``ntc1``) of the
+breakout board the sensor sits on; nothing is assigned automatically.
 
 Field kinds: ``str``, ``int``, ``float``, ``bool``, ``quantity`` (value with a
 fixed unit: a number is taken in that unit, another unit is rejected; no
@@ -289,6 +301,54 @@ calibration; data before the move are still evaluated with the old board.
 
 Calibrations stay where they are (sensor manager, files); they are found by
 the id of the sensor item.
+
+
+Calibration assignments
+-----------------------
+
+Status 2026-11-12: implemented (``redvypr/devices/sensors/calibration/calibration_assignments.py``).
+
+A calibration (``raw2data()``) does not know the datastream it converts: the same sensor is
+mounted at other channels. The **assignment** names the data in the configuration of the device
+that applies the calibrations (``generic_sensor``: ``calibration_assignments``)::
+
+    calibration_assignments:
+      - filter: "hf0 @ i:'adc' and di:'30572ED22A0BE4E8'"   # redvypr address of the raw data
+        sn: '1158'            # the calibration of this sensor valid at the time of the data
+        type: hf_sensor       # item type of the sensor (optional)
+        result: hf0_W_m2      # datakey of the result (optional, {datakey} allowed; default: replaces the raw)
+        raw_unit: V           # unit of the raw data (optional): V -> mV of the calibration input
+      - filter: "ntc0 @ i:'adc' and di:'30572ED22A0BE4E8'"
+        uuid: CALNTC_...      # exactly this calibration
+
+The device subscribes the filters, converts every matching packet (calibration of the sensor
+valid at the packet time, or by uuid) and publishes it with the results. The calibrations come
+from the metadata libraries of the instance (``Device.thread_start()`` hands the ones the
+assignments name to the thread) and from the calibrations of the configuration.
+
+**Configuration and items are compatible.** The assignments of a configuration are metadata:
+one entry per filter address, key ``calibration_assignment`` (value: sn, type, uuid, result,
+raw_unit, owner = the device name), flag ``persistent`` (the address has no run filters),
+``valid_from`` / ``valid_until`` as every metadata. ``Device.assignments_to_metadata()`` writes
+the configuration as the state from now on (new or changed assignments start, those of this
+device that are not in the configuration any more end, unchanged ones add nothing);
+``Device.assignments_from_metadata(at_time)`` reads the state of a date back into the
+configuration ("reconstruct the configuration at date XYZ").
+``Redvypr.save_calibration_assignments()`` / ``get_calibration_assignments()`` do the same
+without a device. Writing into the metadata is an action, not automatic: the libraries are in
+git. A filter has one calibration at a time (a new value ends the previous), also across devices.
+Not part of the assignments: secrets of a configuration (network keys, dataset TLVs).
+
+**GUI:** the button "Calibration assignments" of the generic_sensor device opens the table of
+its assignments (add, edit, remove, "Save to metadata ..." with a valid-from time, "Load from
+metadata ..." for the state at a date, ``calibration_assignments_widget.py``). In the Items
+window, tab Calibrations, "Apply to datastream ..." adds an assignment for the selected
+calibration (or the sensor) to a generic_sensor device of the instance; the dialog asks for the
+datastream.
+
+Open: filters derived from the item tree (sensor in slot ``hf0`` of the board on the logger with
+the ``deviceid``; the slots are datastream names, see the slot suggestions of the Move dialog);
+the same for the norlog gateway (setup per device, "apply the most recent configuration").
 
 
 Conversion into units

@@ -7,6 +7,19 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- Calibration assignments: which data a calibration converts is a redvypr address (filter) in the
+  configuration of the device (`generic_sensor`: `calibration_assignments`: filter, sn or uuid,
+  type, result, raw_unit), the calibration comes from the metadata libraries (sn: the one valid at
+  the time of the data). The assignments are metadata too (key `calibration_assignment`,
+  persistent, with history): `Device.assignments_to_metadata()`, `assignments_from_metadata(at_time)`
+  rebuild a configuration for a date; `Redvypr.save_calibration_assignments()` and
+  `get_calibration_assignments()`; module `calibration_assignments`. GUI: "Calibration assignments"
+  in the generic_sensor device (table, save to / load from metadata for a date) and "Apply to
+  datastream ..." in the tab Calibrations of the Items window.
+- Slot suggestions: an item type declares the slots it offers (`slots` of a type definition, class
+  attribute `Item.SLOTS`; `breakout_board_v01`: `hf0`, `ntc0`, `hf1`, `ntc1`). The Move dialog of
+  the Items window offers the slots of the parent and of its ancestors that accept the item type
+  (`items.slot_options()`), marks occupied slots, and still takes any typed slot.
 - Persistent metadata: entries marked `persistent` (constraint, not part of the context), e.g. the
   location or the user of a host, are found without the filters naming the run and the address of
   the host that wrote them (`u`, `a`, `ul`, `al`; the host name stays a filter), so they apply to

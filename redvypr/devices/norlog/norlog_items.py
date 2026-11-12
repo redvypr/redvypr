@@ -36,6 +36,12 @@ class BreakoutBoardV01(items.Item):
     """
     ITEMTYPE: typing.ClassVar[str] = 'breakout_board_v01'
     REVISION: typing.ClassVar[int] = 1
+    SLOTS: typing.ClassVar[dict] = {
+        'hf0': {'accepts': ['hf_sensor'], 'label': 'heat flux 0 (J2 1/2)'},
+        'ntc0': {'accepts': ['ntc_sensor'], 'label': 'NTC 0 (J2 3/4)'},
+        'hf1': {'accepts': ['hf_sensor'], 'label': 'heat flux 1 (J2 5/6)'},
+        'ntc1': {'accepts': ['ntc_sensor'], 'label': 'NTC 1 (J2 7/8)'},
+    }
     R1: typing.Optional[items.Quantity] = pydantic.Field(
         default=None, description='Reference resistor of the NTCs (nominal 10 kOhm, ERA-6ARB103V), '
                                   'measured: R_ref of the NTC calibration')

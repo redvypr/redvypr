@@ -1551,6 +1551,30 @@ class Redvypr(QtCore.QObject):
         self.redvyprreplyqueue.get()
         return len(addresses)
 
+    def save_calibration_assignments(self, assignments, valid_from=None, owner: str | None = None) -> list:
+        """
+        Writes the calibration assignments of a configuration (redvypr.devices.sensors.calibration.
+        calibration_assignments) into the metadata as the state from valid_from on (default now):
+        changed ones start, ones of the same owner (e.g. the device name) that are not in the list
+        end. Returns the changed addresses.
+        """
+        from redvypr.devices.sensors.calibration import calibration_assignments as cass
+        work = self._copy_metadata()
+        changed = cass.store_assignments(work, assignments, valid_from=valid_from, hostinfo=self.hostinfo,
+                                         owner=owner)
+        if changed:
+            datapacket = redvypr.data_packets.commandpacket(command='reply')
+            datapacket['_metadata_remove'] = {a: {'keys': [], 'mode': 'exact'} for a in changed}
+            datapacket['_metadata'] = {a: work[a] for a in changed}
+            self.redvyprqueue.put(datapacket)
+            self.redvyprreplyqueue.get()
+        return changed
+
+    def get_calibration_assignments(self, at_time=None, owner: str | None = None) -> list:
+        """The calibration assignments valid at a time (default now); owner: only those of that owner."""
+        from redvypr.devices.sensors.calibration import calibration_assignments as cass
+        return cass.assignments_from_storage(self._copy_metadata(), at_time=at_time, owner=owner)
+
     def get_item(self, ref: str, at_time=None, builtin: bool = True):
         """An item ('<itemtype>/<id>') at a time (default now), None if unknown (builtin: also built-in items)."""
         return redvypr_items.get_item(self._copy_metadata(), ref, at_time=at_time, builtin=builtin)

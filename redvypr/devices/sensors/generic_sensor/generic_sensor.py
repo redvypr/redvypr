@@ -32,6 +32,8 @@ from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget, datastr
 from redvypr.devices.sensors.calibration.calibration_models import calibration_models, CalibrationNTC
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
 from redvypr.gui import iconnames
+from redvypr.devices.sensors.calibration import calibration_assignments as cass
+from redvypr.devices.sensors.calibration import item_calibration
 from .sensor_definitions import Sensor, BinarySensor, predefined_sensors
 from .calibrationWidget import sensorCalibrationsWidget
 
@@ -62,6 +64,13 @@ class DeviceCustomConfig(pydantic.BaseModel):
     #calibrations: list = pydantic.Field(default=[])
     calibrations: typing.List[typing.Annotated[typing.Union[*calibration_models], pydantic.Field(discriminator='calibration_type')]] = pydantic.Field(default=[])
     calibration_files: list = pydantic.Field(default=[])
+    calibration_assignments: typing.List[cass.CalibrationAssignment] = pydantic.Field(
+        default=[], description='Which data a calibration converts (filter = redvypr address of the raw data, '
+                                'calibration by sn or uuid), see calibration_assignments.py. The calibrations '
+                                'come from the metadata libraries or from calibrations')
+    # runtime only (not saved): the calibrations of the metadata (libraries) the assignments refer to,
+    # as metadata storage; filled by Device.thread_start()
+    library_metadata: dict = pydantic.Field(default={}, exclude=True)
 
 
 
@@ -79,6 +88,8 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
         if metadata_datapacket is not None:
             dataqueue.put(metadata_datapacket)
 
+    # calibrations of the assignments: from the metadata (libraries) and the calibrations of the configuration
+    assignment_calibrations = item_calibration.calibrations_from_metadata(config.library_metadata)         + list(config.calibrations)
     #splitter = BinaryDataSplitter(config.sensors)
     #print('Splitter',splitter)
     while True:
@@ -89,6 +100,16 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                 logger.debug('Got a command: {:s}'.format(str(data)))
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
+
+            if config.calibration_assignments:
+                try:
+                    converted, applied = cass.apply_assignments(config.calibration_assignments, data,
+                                                                assignment_calibrations)
+                except Exception:
+                    logger.info('Could not apply the calibration assignments', exc_info=True)
+                    applied = []
+                if applied:
+                    dataqueue.put(converted)
 
             for sensor in config.sensors:
                 #print('Sensor',sensor)
@@ -126,6 +147,46 @@ class Device(RedvyprDevice):
         self.unsubscribe_all()
         for sensor in self.custom_config.sensors:
             self.subscribe_address(sensor.datastream)
+        for assignment in self.custom_config.calibration_assignments:
+            self.subscribe_address(assignment.filter)
+
+    def thread_start(self, config=None):
+        """The calibrations of the assignments are taken from the metadata (libraries) of this instance."""
+        if config is None and self.custom_config is not None:
+            config = self.custom_config.model_dump()
+            config['library_metadata'] = self.assignment_metadata()
+        return super().thread_start(config=config)
+
+    def assignment_metadata(self) -> dict:
+        """The calibrations of the metadata the assignments refer to (sn or uuid), as metadata storage."""
+        sns = {a.sn for a in self.custom_config.calibration_assignments if a.sn}
+        uuids = {a.uuid for a in self.custom_config.calibration_assignments if a.uuid}
+        out = {}
+        if not (sns or uuids):
+            return out
+        for address, entries in self.redvypr._copy_metadata().items():
+            keep = []
+            for e in entries or []:
+                v = e.get('value') if isinstance(e, dict) and e.get('key') == 'calibration' else None
+                if isinstance(v, dict) and (v.get('sn') in sns or v.get('calibration_uuid') in uuids
+                                            or v.get('manufacturer_sn') in sns):
+                    keep.append(e)
+            if keep:
+                out[address] = keep
+        return out
+
+    def assignments_to_metadata(self, valid_from=None) -> list:
+        """Writes the calibration assignments of the configuration into the metadata (new state from valid_from on)."""
+        return self.redvypr.save_calibration_assignments(self.custom_config.calibration_assignments,
+                                                         valid_from=valid_from, owner=self.name)
+
+    def assignments_from_metadata(self, at_time=None) -> list:
+        """Takes the calibration assignments valid at a time (default now) of this device from the metadata."""
+        assignments = self.redvypr.get_calibration_assignments(at_time=at_time, owner=self.name)
+        self.custom_config.calibration_assignments = assignments
+        self.update_subscriptions()
+        self.config_changed_signal.emit()
+        return assignments
 
     def add_sensor(self, sensor):
         flag_name_new = True
@@ -388,6 +449,10 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
         self.sensor_calibrations = QtWidgets.QPushButton('Calibrations')
         self.sensor_calibrations.clicked.connect(self.calibrations_clicked)
         self.sensorwidget_layout.addWidget(self.sensor_calibrations)
+        self.sensor_assignments = QtWidgets.QPushButton('Calibration assignments')
+        self.sensor_assignments.setToolTip('Which data a calibration converts (redvypr address of the raw data)')
+        self.sensor_assignments.clicked.connect(self.assignments_clicked)
+        self.sensorwidget_layout.addWidget(self.sensor_assignments)
 
         self.layout.removeWidget(self.label)
         self.label.setParent(None)
@@ -398,6 +463,13 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
         self.config_widgets.append(self.sensortable)
         self.config_widgets.append(self.sensor_addbutton)
         self.config_widgets.append(self.sensor_calibrations)
+        self.config_widgets.append(self.sensor_assignments)
+
+    def assignments_clicked(self):
+        from redvypr.devices.sensors.calibration.calibration_assignments_widget import CalibrationAssignmentsWidget
+        self.assignments_widget = CalibrationAssignmentsWidget(self.device)
+        self.assignments_widget.resize(900, 400)
+        self.assignments_widget.show()
 
     def calibrations_clicked(self):
         self.calibrationsWidget = sensorCalibrationsWidget(calibrations=self.device.custom_config.calibrations, redvypr_device = self.device)

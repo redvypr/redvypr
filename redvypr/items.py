@@ -62,6 +62,10 @@ class Item(pydantic.BaseModel):
     # optional field needs no migration; renamed fields or changed meanings
     # are handled in migrate().
     REVISION: typing.ClassVar[int] = 1
+    # Slots this type offers to the items mounted on it (or on its children):
+    # {slot: {'accepts': [itemtypes], 'label': text}}. Only a suggestion for the
+    # slot of an item (see slot_options()); 'accepts' empty/missing: any type.
+    SLOTS: typing.ClassVar[dict] = {}
 
     itemtype: str = pydantic.Field(default='item', description='Type of the item')
     id: str = pydantic.Field(default='', description='Serial number or name, unique per item type')
@@ -170,6 +174,49 @@ def register_builtin_item(item: Item) -> Item:
 def get_item_type(itemtype: str) -> typing.Type[Item]:
     """The model of an item type; the generic Item for unknown types."""
     return ITEM_TYPES.get(itemtype, Item)
+
+
+def slot_options(all_items: typing.Iterable['Item'], parent_ref: typing.Optional[str], itemtype: str,
+                 exclude_ref: typing.Optional[str] = None) -> typing.List[dict]:
+    """
+    The slots suggested for an item of type itemtype mounted on parent_ref: the slots
+    declared by the type of the parent and of its ancestors (nearest first), without the
+    slots that do not accept the type. Each entry: {'slot', 'label', 'owner' (reference
+    of the declaring item), 'occupied_by' (reference of an item below the owner in that
+    slot, or None)}. all_items: the items at the time of interest; exclude_ref: the item
+    that is moved (does not occupy a slot).
+    """
+    by_ref = {it.ref: it for it in all_items}
+    if not parent_ref or parent_ref not in by_ref:
+        return []
+
+    def ancestors(ref):
+        out, seen = [], set()
+        while ref and ref in by_ref and ref not in seen:
+            seen.add(ref)
+            out.append(ref)
+            ref = by_ref[ref].parent
+        return out
+
+    options, names = [], set()
+    for owner in ancestors(parent_ref):
+        slots = getattr(get_item_type(by_ref[owner].itemtype), 'SLOTS', None) or {}
+        for name, spec in slots.items():
+            spec = spec if isinstance(spec, dict) else {}
+            accepts = spec.get('accepts') or []
+            if accepts and itemtype not in accepts:
+                continue
+            if name in names:
+                continue
+            names.add(name)
+            occupant = None
+            for it in by_ref.values():
+                if it.ref != exclude_ref and it.slot == name and owner in ancestors(it.ref)[1:]:
+                    occupant = it.ref
+                    break
+            options.append({'slot': name, 'label': spec.get('label') or '', 'owner': owner,
+                            'occupied_by': occupant})
+    return options
 
 
 # --- references and addresses ------------------------------------------------------
