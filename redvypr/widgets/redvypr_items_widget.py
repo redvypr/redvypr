@@ -594,6 +594,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         itemtype = self.type_filter.currentData()
 
         needle = self.search_words()
+        full_items = all_items          # the slots are taken from all items, also while searching
         if needle:
             all_items = self.search_items(all_items, needle)
         by_ref = {i.ref: i for i in all_items}
@@ -628,8 +629,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             for item in sorted(all_items, key=lambda i: (i.itemtype, i.id)):
                 if itemtype is None or item.itemtype == itemtype:
                     self.tree.addTopLevelItem(node(item))
-        if not needle:
-            self._add_slot_rows(all_items, nodes)   # also in the flat list and with a type filter
+        self._add_slot_rows(full_items, nodes)      # also in the flat list, with a type filter and a search
         self.tree.expandAll()
         for c in range(self.tree.columnCount()):
             self.tree.resizeColumnToContents(c)

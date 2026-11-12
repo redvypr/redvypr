@@ -307,13 +307,19 @@ def test_search_filters_by_serial_number_and_name(widget):
     w.search.setText('1158')
     w.refresh()                                           # (the timer does this after a pause)
     assert sorted(r for _d, r in tree_refs(w)) == ['hf_sensor/1158', 'ntc_sensor/1158-ntc']
-    assert slot_rows(w) == {}                             # no slot rows while searching
+    assert slot_rows(w) == {}                             # the board is not shown: no slots
     w.search.setText('fr-075 hf')                         # several words, any case, name
     w.refresh()
     assert [r for _d, r in tree_refs(w)] == ['hf_sensor/1158']
     w.search.setText('0042')                              # a match shows the items it sits on
     w.refresh()
     assert tree_refs(w) == [(0, 'norlog_v02/N-012'), (1, 'breakout_board_v01/BO-003'), (2, 'ntc_sensor/0042')]
+    assert sorted(slot for _o, slot in slot_rows(w)) == ['hf0', 'hf1', 'ntc1']   # the slots of the shown board
+    w.search.setText('bo-003')                            # the board only: its slots, the mounted item as a row
+    w.type_filter.setCurrentIndex(w.type_filter.findData('breakout_board_v01'))
+    w.refresh()
+    assert sorted(slot for _o, slot in slot_rows(w)) == ['hf0', 'hf1', 'ntc1']
+    w.type_filter.setCurrentIndex(0)
     w.search.setText('nothing like this')
     w.refresh()
     assert tree_refs(w) == []
