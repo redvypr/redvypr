@@ -613,8 +613,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             for item in sorted(all_items, key=lambda i: (i.itemtype, i.id)):
                 if itemtype is None or item.itemtype == itemtype:
                     self.tree.addTopLevelItem(node(item))
-        if itemtype is None and not self.flat.isChecked():
-            self._add_slot_rows(all_items, nodes)
+        self._add_slot_rows(all_items, nodes)       # also in the flat list and with a type filter
         self.tree.expandAll()
         for c in range(self.tree.columnCount()):
             self.tree.resizeColumnToContents(c)

@@ -279,3 +279,13 @@ def test_free_button_follows_the_selection(widget):
     assert w.btn_free.isEnabled()
     select(w, 'norlog_v02/N-012')
     assert not w.btn_free.isEnabled()
+
+
+def test_free_slots_in_the_type_filtered_list(widget):
+    w = widget
+    w.type_filter.setCurrentIndex(w.type_filter.findData('breakout_board_v01'))
+    assert tree_refs(w) == [(0, 'breakout_board_v01/BO-003')]
+    assert sorted(slot for _o, slot in slot_rows(w)) == ['hf0', 'hf1', 'ntc1']
+    w.flat.setChecked(True)
+    w.type_filter.setCurrentIndex(0)
+    assert sorted(slot for _o, slot in slot_rows(w)) == ['hf0', 'hf1', 'ntc1']
