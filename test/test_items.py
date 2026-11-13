@@ -142,7 +142,8 @@ def test_get_items_tree_and_move():
     assert items.get_items(storage, "ntc0 @ i:'adc_brd' and di:'0xFFFF'") == {}
     # the NTC moves to slot ntc1 on 1 Dec: before the old, after the new assignment
     ntc = items.get_item(storage, 'ntc_sensor/0042')
-    items.add_item(storage, ntc.model_copy(update={'slot': 'ntc1'}), valid_from=T2, fields={'slot': 'ntc1'})
+    items.add_item(storage, ntc.model_copy(update={'slot': 'ntc1'}), valid_from=T2,
+                   fields={'parent': items.parent_value(ntc.parent, 'ntc1')})
     assert items.get_items(storage, "ntc0 @ i:'adc_brd' and di:'0xA1B2'", at_time=T1)['sensor'].id == '0042'
     assert 'sensor' not in items.get_items(storage, "ntc0 @ i:'adc_brd' and di:'0xA1B2'", at_time=T2)
     assert items.get_items(storage, "ntc1 @ i:'adc_brd' and di:'0xA1B2'", at_time=T2)['sensor'].id == '0042'
@@ -258,7 +259,7 @@ def test_get_items_scales():
             items.add_item(storage, it, valid_from=t0)
             for m in range(1, 4):
                 items.add_item(storage, it, valid_from=t0 + datetime.timedelta(days=30 * m),
-                               fields={'slot': f'ntc{(k + m) % 4}'})
+                               fields={'parent': items.parent_value(it.parent, f'ntc{(k + m) % 4}')})
     for o in range(2000):
         md.add_metadata_to_entries(md.create_metadata_dict(f"x{o} @ d:'dev{o % 50}'", {'unit': 'V'},
                                                            valid_from=t0), storage)

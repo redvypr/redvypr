@@ -1160,7 +1160,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         times = [self.time()]
         for addr, entries in self.redvypr._copy_metadata().items():
             for e in entries or []:
-                if isinstance(e, dict) and e.get('key') == 'parent' and e.get('value') == ref:
+                if isinstance(e, dict) and e.get('key') == 'parent' and \
+                        ritems.split_parent(e.get('value'))[0] == ref:
                     vf = (e.get('constraints') or {}).get('valid_from')
                     if vf is not None:
                         times.append(vf)
@@ -1220,12 +1221,12 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
             if parent_ref is not None:
                 ritems.parse_ref(parent_ref)
             moved = item.model_copy(update={'parent': parent_ref, 'slot': slot})
-            fields = {k: v for k, v in (('parent', parent_ref), ('slot', slot))}
-            # a removed parent/slot ends its entry: write the whole item
-            if parent_ref is None or slot is None:
+            # a removed parent ends its entry: write the whole item
+            if parent_ref is None:
                 self.redvypr.add_item(moved, valid_from=valid_from)
             else:
-                self.redvypr.add_item(moved, valid_from=valid_from, fields=fields)
+                self.redvypr.add_item(moved, valid_from=valid_from,
+                                      fields={'parent': ritems.parent_value(parent_ref, slot)})
         except Exception as e:
             self.set_status(f'{item.ref} not moved: {e}', error=True)
             return False

@@ -109,3 +109,25 @@ def test_move_dialog_suggests_slots():
     dlg2.slot.setEditText('ntc0')
     assert ntc2.ref in dlg2.slot_hint.text()
     assert app is not None
+
+
+def test_slot_is_stored_with_the_parent():
+    s = {}
+    items.add_item(s, items.Item(itemtype='hf_sensor', id='1', parent='breakout_board_v01/B', slot='hf0'),
+                   valid_from=T0)
+    items.add_item(s, items.Item(itemtype='board', id='2', parent='logger/L'), valid_from=T0)
+    hist = {e['key']: e['value'] for e in items.get_item_history(s, 'hf_sensor/1')}
+    assert hist['parent'] == {'item': 'breakout_board_v01/B', 'slot': 'hf0'} and 'slot' not in hist
+    assert {e['key']: e['value'] for e in items.get_item_history(s, 'board/2')}['parent'] == 'logger/L'
+    got = items.get_item(s, 'hf_sensor/1', at_time=T0)
+    assert (got.parent, got.slot) == ('breakout_board_v01/B', 'hf0')
+    # a slot change is one new parent entry
+    t1 = T0 + datetime.timedelta(days=1)
+    items.add_item(s, got, valid_from=t1, fields={'parent': items.parent_value(got.parent, 'hf1')})
+    assert items.get_item(s, 'hf_sensor/1', at_time=t1).slot == 'hf1'
+    assert items.get_item(s, 'hf_sensor/1', at_time=T0).slot == 'hf0'
+    try:
+        items.add_item(s, items.Item(itemtype='hf_sensor', id='3', slot='hf0'), valid_from=T0)
+        raise AssertionError('slot without parent accepted')
+    except items.ItemError:
+        pass

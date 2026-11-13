@@ -301,6 +301,23 @@ def parse_item_address(address) -> typing.Optional[typing.Tuple[str, str]]:
 
 # --- writing ------------------------------------------------------------------------
 
+def parent_value(parent: typing.Optional[str], slot: typing.Optional[str] = None):
+    """
+    Stored value of the key 'parent': the reference alone, or {'item': reference, 'slot': slot}
+    if the item sits in a slot of the parent (the slot belongs to the parent, one entry).
+    """
+    if not parent:
+        return None
+    return {'item': parent, 'slot': slot} if slot else parent
+
+
+def split_parent(value) -> typing.Tuple[typing.Optional[str], typing.Optional[str]]:
+    """(parent reference, slot) of a stored 'parent' value (see parent_value())."""
+    if isinstance(value, dict):
+        return value.get('item') or None, value.get('slot') or None
+    return value or None, None
+
+
 def item_fields(item: Item) -> dict:
     """
     The metadata keys of an item: all set fields except type and id, with the type revision.
@@ -310,6 +327,12 @@ def item_fields(item: Item) -> dict:
               if not (isinstance(v, (str, list, dict)) and len(v) == 0)}
     for k in ADDRESS_FIELDS:
         fields.pop(k, None)
+    if fields.get('slot') and not fields.get('parent'):
+        raise ItemError(f'{item.ref}: slot {fields["slot"]!r} without a parent')
+    # the slot belongs to the parent: stored together in one entry
+    slot = fields.pop('slot', None)
+    if slot and fields.get('parent'):
+        fields['parent'] = parent_value(fields['parent'], slot)
     cls = type(item)
     if cls is Item:
         # generic model (also for unknown types): keep the stored revision
@@ -419,6 +442,8 @@ def item_from_fields(itemtype: str, item_id: str, fields: dict) -> Item:
     elif cls is not Item and rev > cls.REVISION:
         logger.warning(f'{itemtype}/{item_id} has revision {rev}, newer than {cls.REVISION} of this redvypr')
     fields.update(itemtype=itemtype, id=item_id)
+    if isinstance(fields.get('parent'), dict):
+        fields['parent'], fields['slot'] = split_parent(fields['parent'])
     try:
         return cls.model_validate(fields)
     except pydantic.ValidationError:

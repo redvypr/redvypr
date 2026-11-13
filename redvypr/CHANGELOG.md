@@ -6,6 +6,10 @@ redvypr changelog
 
 ## [unreleased] -
 
+### Changed
+- The slot of an item is stored together with its parent in one entry: `parent: {item: <ref>, slot: <slot>}`
+  (plain reference without slot). `Item.parent`/`Item.slot` are unchanged; a slot without a parent is refused.
+
 ### Added
 - Search field in the Items window: filters the items by serial number, name, description and the like
   (several words: all must match); the items a match sits on stay in the tree.

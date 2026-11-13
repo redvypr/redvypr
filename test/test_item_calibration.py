@@ -113,7 +113,7 @@ def test_series_split_at_changes():
     cal = ntc_cal()
     # the NTC moves to slot ntc1 at T2: ntc0 has no sensor afterwards
     ntc = items.get_item(s, 'ntc_sensor/0042', at_time=T1)
-    items.add_item(s, ntc, valid_from=T2, fields={'slot': 'ntc1'})
+    items.add_item(s, ntc, valid_from=T2, fields={'parent': items.parent_value(ntc.parent, 'ntc1')})
     t = np.array([T1.timestamp(), T1.timestamp() + 60, T2.timestamp() + 60])
     x = np.full(3, 10000.0 / 10002.7)
     values, unit, parts = ic.calibrate_series(s, ADDR, t, x, calibrations=[cal])

@@ -206,10 +206,20 @@ Every item says itself where it sits:
 * ``parent``: item reference of the item it is mounted on or connected to,
 * ``slot``: where on the parent (free string).
 
+The slot belongs to the parent, so both are **one** metadata entry: ``parent`` is
+the reference alone, or ``{item: <reference>, slot: <slot>}`` if the item sits
+in a slot (``items.parent_value()``, ``items.split_parent()``). ``Item.parent``
+and ``Item.slot`` stay separate attributes of the model; a ``slot`` without a
+``parent`` is refused::
+
+    - key: parent
+      value: {item: breakout_board_v01/BO-001, slot: hf0}
+      constraints: {valid_from: '2026-11-13T08:26:26+00:00'}
+
 Children are not stored in the parent; they are found with the query "all
-items with ``parent`` = X". A rebuild is one new ``parent``/``slot`` entry at
+items with ``parent`` = X". A rebuild is one new ``parent`` entry at
 the moved item; the old entry ends, so the history shows where the item was
-when.
+when (and in which slot).
 
 The tree is kept **in redvypr only**: a rebuild is entered in the Items
 window (or another redvypr GUI), with the time of the rebuild. The devices do

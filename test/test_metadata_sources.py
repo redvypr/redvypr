@@ -210,7 +210,7 @@ def test_several_libraries_with_calibrations(tmp_path):
     r.load_metadata_library(cals)
     assert [c.sn for c in ic.calibrations_from_metadata(r._copy_metadata())] == ['NTC-1']
     # new item and new calibration in the instance
-    r.add_item(items.Item(itemtype='ntc_sensor', id='NTC-2', slot='ntc0'), valid_from=T1)
+    r.add_item(items.Item(itemtype='ntc_sensor', id='NTC-2', parent='board/B', slot='ntc0'), valid_from=T1)
     c2 = ntc('NTC-2')
     a2 = c2.create_redvypr_address().to_address_string()
     r.set_metadata_from_dict({a2: {'calibration': c2.model_dump(mode='json')}})
